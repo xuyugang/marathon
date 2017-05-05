@@ -5,6 +5,7 @@ import java.time.Clock
 
 import akka.actor.ActorSystem
 import akka.event.EventStream
+import akka.stream.Materializer
 import com.google.inject.AbstractModule
 import com.google.inject.{ Provides, Scopes, Singleton }
 import com.typesafe.config.Config
@@ -36,6 +37,7 @@ class AkkaHttpModule(conf: MarathonConf with HttpConf) extends AbstractModule {
     marathonSchedulerService: MarathonSchedulerService,
     appTasksRes: mesosphere.marathon.api.v2.AppTasksResource)(implicit
     actorSystem: ActorSystem,
+    materializer: Materializer,
     authenticator: Authenticator,
     authorizer: Authorizer,
     electionService: ElectionService): AkkaHttpMarathonService = {
