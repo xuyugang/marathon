@@ -1,25 +1,27 @@
 package mesosphere.marathon
 package core.storage.store
 
-import java.time.{ Clock, OffsetDateTime }
+import java.time.OffsetDateTime
+import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
+import akka.Done
 import akka.actor.ActorSystem
+import akka.http.scaladsl.marshalling.Marshaller
+import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.stream.ActorMaterializer
+import kamon.Kamon
 import mesosphere.marathon.core.storage.store.impl.cache.LazyCachingPersistenceStore
-import mesosphere.marathon.core.storage.store.impl.memory.{ InMemoryPersistenceStore, RamId }
+import mesosphere.marathon.core.storage.store.impl.memory.{Identity, InMemoryPersistenceStore, RamId}
+import mesosphere.marathon.core.storage.store.impl.zk.ZkPersistenceStore
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
-import scala.concurrent.Await
+
+import scala.concurrent.{Await, Future, Promise}
 import scala.concurrent.duration._
 
 case class TestClass1(str: String, int: Int, version: OffsetDateTime)
-
-object TestClass1 {
-  def apply(str: String, int: Int)(implicit clock: Clock): TestClass1 = {
-    TestClass1(str, int, OffsetDateTime.now(clock))
-  }
-}
 
 trait InMemoryTestClass1Serialization {
   implicit object InMemTestClass1Resolver extends IdResolver[String, TestClass1, String, RamId] {
@@ -43,17 +45,78 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
   implicit val system: ActorSystem = ActorSystem()
   implicit val materializer = ActorMaterializer()
 
+  implicit def marshaller[V]: Marshaller[V, Identity] = Marshaller.opaque { a: V => Identity(a) }
+
+  @SuppressWarnings(Array("AsInstanceOf"))
+  implicit def unmarshaller[V]: Unmarshaller[Identity, V] =
+    Unmarshaller.strict { a: Identity => a.value.asInstanceOf[V] }
+
   private def cachedInMemory = {
     LazyCachingPersistenceStore(new InMemoryPersistenceStore())
   }
 
+  def zkStore: ZkPersistenceStore = {
+    val root = UUID.randomUUID().toString
+    val client = zkClient(namespace = Some(root))
+    new ZkPersistenceStore(client, Duration.Inf, 8)
+  }
+  private def cachedZk = LazyCachingPersistenceStore(zkStore)
+
+  case class Run[K, Category](
+      concurrentStores: Int,
+      store: PersistenceStore[K, Category, Identity]
+  )(implicit ir: IdResolver[String, TestClass1, Category, K]) {
+    val go = Promise[Done]
+    val count = new AtomicInteger()
+
+    val original = TestClass1("abc", 1, OffsetDateTime.now())
+
+    // Fill up runs but don't execute them yet.
+    // All start when the promise `go` succeeds.
+    val runs = {
+      val tmp = Future.sequence((1 to concurrentStores).map { i =>
+        count.incrementAndGet()
+        go.future.flatMap { _ =>
+          println(s"Store $i")
+          store.store("task-1", original)
+        }
+      })
+
+      // Sleep until all are ready to run.
+      while (count.get() < concurrentStores) { Thread.sleep(100) }
+      tmp
+    }
+
+    def start(): Unit = go.success(Done)
+
+    def await() = Await.result(runs, 10.minutes)
+  }
+
   @Benchmark
-  def deploymentPlanDependencySpeed(hole: Blackhole): Unit = {
+  def storeInMemory(hole: Blackhole): Unit = {
+    val r = Run(100, cachedInMemory)
+    r.start()
+    hole.consume(r.await())
+  }
+
+  @Benchmark
+  def storeZooKeeper(hole: Blackhole): Unit = {
+    val r = Run(100, cachedInMemory)
+    r.start()
+    hole.consume(r.await())
+  }
+
+  @Setup(Level.Trial)
+  def setup(): Unit = {
+    Kamon.start()
   }
 
   @TearDown(Level.Trial)
   def shutdown(): Unit = {
+    println("Shutting down...")
+    Kamon.shutdown()
     system.terminate()
     Await.ready(system.whenTerminated, 15.seconds)
+    println("...shutdown succeeded.")
   }
 }
