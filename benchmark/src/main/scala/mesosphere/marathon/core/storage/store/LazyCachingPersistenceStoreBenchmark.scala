@@ -13,12 +13,12 @@ import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.stream.ActorMaterializer
 import kamon.Kamon
 import mesosphere.marathon.core.storage.store.impl.cache.LazyCachingPersistenceStore
-import mesosphere.marathon.core.storage.store.impl.memory.{Identity, InMemoryPersistenceStore, RamId}
+import mesosphere.marathon.core.storage.store.impl.memory.{ Identity, InMemoryPersistenceStore, RamId }
 import mesosphere.marathon.core.storage.store.impl.zk.ZkPersistenceStore
 import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
 
-import scala.concurrent.{Await, Future, Promise}
+import scala.concurrent.{ Await, Future, Promise }
 import scala.concurrent.duration._
 
 case class TestClass1(str: String, int: Int, version: OffsetDateTime)
@@ -55,12 +55,12 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
     LazyCachingPersistenceStore(new InMemoryPersistenceStore())
   }
 
-  def zkStore: ZkPersistenceStore = {
-    val root = UUID.randomUUID().toString
-    val client = zkClient(namespace = Some(root))
-    new ZkPersistenceStore(client, Duration.Inf, 8)
-  }
-  private def cachedZk = LazyCachingPersistenceStore(zkStore)
+  //  def zkStore: ZkPersistenceStore = {
+  //    val root = UUID.randomUUID().toString
+  //    val client = zkClient(namespace = Some(root))
+  //    new ZkPersistenceStore(client, Duration.Inf, 8)
+  //  }
+  //  private def cachedZk = LazyCachingPersistenceStore(zkStore)
 
   case class Run[K, Category](
       concurrentStores: Int,
@@ -73,12 +73,24 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
 
     // Fill up runs but don't execute them yet.
     // All start when the promise `go` succeeds.
-    val runs = {
+    val storeRuns = {
       val tmp = Future.sequence((1 to concurrentStores).map { i =>
         count.incrementAndGet()
         go.future.flatMap { _ =>
-          println(s"Store $i")
+          if (i % 1000 == 0) println(s"Store $i")
           store.store("task-1", original)
+        }
+      })
+
+      // Sleep until all are ready to run.
+      while (count.get() < concurrentStores) { Thread.sleep(100) }
+      tmp
+    }
+    val getRuns = {
+      val tmp = Future.sequence((1 to concurrentStores).map { i =>
+        count.incrementAndGet()
+        go.future.flatMap { _ =>
+          store.get("task-1")
         }
       })
 
@@ -89,22 +101,22 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
 
     def start(): Unit = go.success(Done)
 
-    def await() = Await.result(runs, 10.minutes)
+    def await() = Await.result(storeRuns.flatMap(_ => getRuns), 10.minutes)
   }
 
   @Benchmark
-  def storeInMemory(hole: Blackhole): Unit = {
-    val r = Run(100, cachedInMemory)
+  def storeAndGetInMemory(hole: Blackhole): Unit = {
+    val r = Run(1000000, cachedInMemory)
     r.start()
     hole.consume(r.await())
   }
 
-  @Benchmark
-  def storeZooKeeper(hole: Blackhole): Unit = {
-    val r = Run(100, cachedInMemory)
-    r.start()
-    hole.consume(r.await())
-  }
+  //  @Benchmark
+  //  def storeZooKeeper(hole: Blackhole): Unit = {
+  //    val r = Run(100, cachedInMemory)
+  //    r.start()
+  //    hole.consume(r.await())
+  //  }
 
   @Setup(Level.Trial)
   def setup(): Unit = {
