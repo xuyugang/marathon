@@ -72,7 +72,8 @@ object Dependencies {
     )
 
   val benchmark = Seq(
-    Test.jmh
+    Test.jmh,
+    Test.curatorTest
   )
 }
 
