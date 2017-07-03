@@ -34,7 +34,7 @@ class MarathonApp(args: Seq[String]) extends AutoCloseable with StrictLogging {
   Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler {
     override def uncaughtException(thread: Thread, throwable: Throwable): Unit = {
       logger.error(s"Terminating ${cliConf.httpPort()} due to uncaught exception in thread ${thread.getName}:${thread.getId}", throwable)
-      Runtime.getRuntime.asyncExit()(ExecutionContexts.global)
+      Runtime.getRuntime.asyncExit()(scala.concurrent.ExecutionContext.global)
     }
   })
 

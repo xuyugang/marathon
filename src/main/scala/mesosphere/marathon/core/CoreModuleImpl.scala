@@ -82,7 +82,7 @@ class CoreModuleImpl @Inject() (
     marathonConf,
     lifecycleState)(
     actorsModule.materializer,
-    ExecutionContexts.global,
+    scala.concurrent.ExecutionContext.global,
     actorSystem.scheduler,
     actorSystem)
 
@@ -193,7 +193,7 @@ class CoreModuleImpl @Inject() (
   override lazy val groupManagerModule: GroupManagerModule = new GroupManagerModule(
     marathonConf,
     scheduler,
-    storageModule.groupRepository)(ExecutionContexts.global, eventStream)
+    storageModule.groupRepository)(scala.concurrent.ExecutionContext.global, eventStream)
 
   // PODS
 
@@ -256,6 +256,6 @@ class CoreModuleImpl @Inject() (
     taskTrackerModule.instanceTracker,
     appOfferMatcherModule.launchQueue,
     eventStream,
-    taskTerminationModule.taskKillService)(ExecutionContexts.global)
+    taskTerminationModule.taskKillService)(scala.concurrent.ExecutionContext.global)
 
 }

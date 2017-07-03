@@ -93,7 +93,7 @@ class MarathonFacade(
     with PodConversion with StrictLogging {
   implicit val scheduler = system.scheduler
   import AkkaHttpResponse._
-  import mesosphere.marathon.core.async.ExecutionContexts.global
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   require(baseGroup.absolute)
 

@@ -23,6 +23,6 @@ private[core] class ThrottlingTaskStatusUpdateProcessor @Inject() (
   @Named(ThrottlingTaskStatusUpdateProcessor.dependencyTag) wrapped: TaskStatusUpdateProcessor)
     extends TaskStatusUpdateProcessor {
   override def publish(status: TaskStatus): Future[Unit] = {
-    serializePublish(wrapped.publish(status))(ExecutionContexts.global)
+    serializePublish(wrapped.publish(status))(scala.concurrent.ExecutionContext.global)
   }
 }

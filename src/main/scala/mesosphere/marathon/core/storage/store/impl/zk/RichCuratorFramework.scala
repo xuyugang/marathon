@@ -187,7 +187,7 @@ object RichCuratorFramework {
     override def stateChanged(client: CuratorFramework, newState: ConnectionState): Unit = {
       if (!newState.isConnected) {
         client.close()
-        Runtime.getRuntime.asyncExit()(ExecutionContexts.global)
+        Runtime.getRuntime.asyncExit()(scala.concurrent.ExecutionContext.global)
       }
     }
   }

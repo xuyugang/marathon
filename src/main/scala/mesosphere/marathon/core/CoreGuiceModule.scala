@@ -213,7 +213,7 @@ class CoreGuiceModule(config: Config) extends AbstractModule {
 
   @Provides
   @Singleton
-  def provideExecutionContext: ExecutionContext = ExecutionContexts.global
+  def provideExecutionContext: ExecutionContext = scala.concurrent.ExecutionContext.global
 
   @Provides @Singleton @Named(ModuleNames.HISTORY_ACTOR_PROPS)
   def historyActor(coreModule: CoreModule): Props = coreModule.historyModule.historyActorProps

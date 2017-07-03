@@ -18,7 +18,7 @@ class StopOnFirstMatchingOfferMatcher(chained: OfferMatcher*) extends OfferMatch
         matchedFuture.flatMap { matched =>
           if (matched.ops.isEmpty) nextMatcher.matchOffer(offer)
           else matchedFuture
-        }(ExecutionContexts.global)
+        }(scala.concurrent.ExecutionContext.global)
     }
   }
 }

@@ -30,7 +30,8 @@ class AppInfoBaseData(
     groupManager: GroupManager) {
 
   import AppInfoBaseData._
-  import mesosphere.marathon.core.async.ExecutionContexts.global
+  //  import scala.concurrent.ExecutionContext.Implicits.global
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   if (log.isDebugEnabled) log.debug(s"new AppInfoBaseData $this")
 

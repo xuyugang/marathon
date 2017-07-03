@@ -4,7 +4,8 @@ package api
 import javax.inject.Inject
 
 import akka.Done
-import mesosphere.marathon.core.async.ExecutionContexts.global
+//import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext.Implicits.global
 import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.instance.Instance

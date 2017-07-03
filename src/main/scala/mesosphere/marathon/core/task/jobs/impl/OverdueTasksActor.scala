@@ -35,7 +35,7 @@ private[jobs] object OverdueTasksActor {
       taskStateOpProcessor: TaskStateOpProcessor,
       killService: KillService,
       clock: Clock) {
-    import mesosphere.marathon.core.async.ExecutionContexts.global
+    import scala.concurrent.ExecutionContext.Implicits.global
 
     private[this] val log = LoggerFactory.getLogger(getClass)
 

@@ -24,7 +24,7 @@ private[tracker] class InstanceCreationHandlerAndUpdaterDelegate(
   instanceTrackerRef: ActorRef)
     extends InstanceCreationHandler with TaskStateOpProcessor {
 
-  import mesosphere.marathon.core.async.ExecutionContexts.global
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   private[impl] implicit val timeout: Timeout = conf.internalTaskUpdateRequestTimeout().milliseconds
 

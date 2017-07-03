@@ -85,7 +85,7 @@ class CuratorElectionService(
     } catch {
       case NonFatal(e) =>
         logger.error(s"ZooKeeper initialization failed - Committing suicide: ${e.getMessage}")
-        Runtime.getRuntime.asyncExit()(ExecutionContexts.global)
+        Runtime.getRuntime.asyncExit()(scala.concurrent.ExecutionContext.global)
     }
   }
 
@@ -124,7 +124,7 @@ class CuratorElectionService(
     logger.info("Lost connection to ZooKeeper as leader — Committing suicide")
     stopLeadership()
     client.close()
-    Runtime.getRuntime.asyncExit()(ExecutionContexts.global)
+    Runtime.getRuntime.asyncExit()(scala.concurrent.ExecutionContext.global)
   }
 
   private[this] def onAbdicate(error: Boolean): Unit = synchronized {
@@ -172,7 +172,7 @@ class CuratorElectionService(
       retryPolicy(new RetryPolicy {
         override def allowRetry(retryCount: Int, elapsedTimeMs: Long, sleeper: RetrySleeper): Boolean = {
           logger.error("ZooKeeper access failed — Committing suicide to avoid invalidating ZooKeeper state")
-          Runtime.getRuntime.asyncExit()(ExecutionContexts.global)
+          Runtime.getRuntime.asyncExit()(scala.concurrent.ExecutionContext.global)
           false
         }
       })

@@ -58,12 +58,12 @@ private[launchqueue] class LaunchQueueDelegate(
     getAsync(runSpecId).map {
       case Some(i) => i.instancesLeftToLaunch
       case None => 0
-    }(ExecutionContexts.global)
+    }(scala.concurrent.ExecutionContext.global)
 
   override def listRunSpecs: Seq[RunSpec] = list.map(_.runSpec)
 
   override def listRunSpecsAsync: Future[Seq[RunSpec]] =
-    listAsync.map(_.map(_.runSpec))(ExecutionContexts.global)
+    listAsync.map(_.map(_.runSpec))(scala.concurrent.ExecutionContext.global)
 
   override def asyncPurge(runSpecId: PathId): Future[Done] =
     askQueueActorFuture[LaunchQueueDelegate.Request, Done]("asyncPurge", timeout = purgeTimeout)(LaunchQueueDelegate.Purge(runSpecId))
@@ -88,7 +88,7 @@ private[launchqueue] class LaunchQueueDelegate(
 
     implicit val timeoutImplicit: Timeout = timeout
     val answerFuture = actorRef ? message
-    import mesosphere.marathon.core.async.ExecutionContexts.global
+    import scala.concurrent.ExecutionContext.Implicits.global
     answerFuture.recover {
       case NonFatal(e) => throw new RuntimeException(s"in $method", e)
     }

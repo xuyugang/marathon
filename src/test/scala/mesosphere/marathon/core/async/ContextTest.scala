@@ -69,7 +69,8 @@ class ContextPropagatingExecutionContextTest extends AkkaUnitTest {
   def withSingleThreadFixture[T](f: ExecutionContext => T): Unit = {
     val executor = Executors.newSingleThreadExecutor()
     try {
-      val ctx = ContextPropagatingExecutionContextWrapper(ExecutionContext.fromExecutor(executor))
+      //      val ctx = ContextPropagatingExecutionContextWrapper(ExecutionContext.fromExecutor(executor))
+      val ctx = ExecutionContext.fromExecutor(executor)
       f(ctx)
     } finally {
       executor.shutdown()

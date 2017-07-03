@@ -12,14 +12,15 @@ import scala.concurrent.{ ExecutionContext, ExecutionContextExecutor }
   */
 trait ContextPropagatingExecutionContext extends ExecutionContext { self =>
   override def prepare(): ExecutionContext = new ExecutionContext {
-    val mdcContext = Option(MDC.getCopyOfContextMap)
-    val context = Context.copy() // linter:ignore
+    //    val mdcContext = Option(MDC.getCopyOfContextMap)
+    //    val context = Context.copy() // linter:ignore
 
-    override def execute(runnable: Runnable): Unit = self.execute(new Runnable {
-      def run(): Unit = {
-        propagateContext(context, mdcContext)(runnable.run())
-      }
-    })
+    override def execute(runnable: Runnable): Unit = runnable.run()
+    //      self.execute(new Runnable {
+    //      def run(): Unit = {
+    //        propagateContext(context, mdcContext)(runnable.run())
+    //      }
+    //    })
 
     override def reportFailure(cause: Throwable): Unit = self.reportFailure(cause)
   }
@@ -28,12 +29,12 @@ trait ContextPropagatingExecutionContext extends ExecutionContext { self =>
 /**
   * Wrapper around another Execution Context that will Propagate MDC and Context.
   */
-case class ContextPropagatingExecutionContextWrapper(wrapped: ExecutionContext)
-    extends ExecutionContext with ContextPropagatingExecutionContext {
-  override def execute(runnable: Runnable): Unit = wrapped.execute(runnable)
-
-  override def reportFailure(cause: Throwable): Unit = wrapped.reportFailure(cause)
-}
+//case class ContextPropagatingExecutionContextWrapper(wrapped: ExecutionContext)
+//    extends ExecutionContext with ContextPropagatingExecutionContext {
+//  override def execute(runnable: Runnable): Unit = wrapped.execute(runnable)
+//
+//  override def reportFailure(cause: Throwable): Unit = wrapped.reportFailure(cause)
+//}
 
 object CallerThreadExecutionContext {
   val executor: Executor = new Executor {
@@ -47,7 +48,7 @@ object CallerThreadExecutionContext {
 
 object ExecutionContexts {
   /** Prefer this context over the default scala one as it can propagate org.slf4j.MDC and [[Context]] */
-  implicit lazy val global: ExecutionContext = ContextPropagatingExecutionContextWrapper(ExecutionContext.global)
+  //implicit lazy val global: ExecutionContext = ContextPropagatingExecutionContextWrapper(ExecutionContext.global)
 
-  lazy val callerThread: ExecutionContext = CallerThreadExecutionContext()
+  //lazy val callerThread: ExecutionContext = CallerThreadExecutionContext()
 }

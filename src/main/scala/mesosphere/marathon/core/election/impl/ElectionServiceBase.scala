@@ -47,7 +47,7 @@ abstract class ElectionServiceBase(
 
   private[impl] var state: State = Idle(candidate = None)
 
-  protected implicit val executionContext: ExecutionContext = ExecutionContexts.global
+  protected implicit val executionContext: ExecutionContext = scala.concurrent.ExecutionContext.global
 
   def leaderHostPortImpl: Option[String]
 

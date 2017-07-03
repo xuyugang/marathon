@@ -138,7 +138,7 @@ private[migration] object MigrationTo15 {
   def deleteEventSubscribers[K, C, S](store: PersistenceStore[K, C, S]): Future[Done] = {
     store match {
       case zk: ZkPersistenceStore =>
-        zk.client.delete("/event-subscribers").map(_ => Done)(ExecutionContexts.callerThread)
+        zk.client.delete("/event-subscribers").map(_ => Done)(scala.concurrent.ExecutionContext.global)
       case _ =>
         Future.successful(Done)
     }

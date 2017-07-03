@@ -38,7 +38,7 @@ class TasksResource @Inject() (
     val authorizer: Authorizer) extends AuthResource {
 
   val log = LoggerFactory.getLogger(getClass.getName)
-  implicit val ec = ExecutionContexts.global
+  implicit val ec = scala.concurrent.ExecutionContext.global
 
   @GET
   @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
