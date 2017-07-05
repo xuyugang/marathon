@@ -74,6 +74,7 @@ case class WorkQueue(name: String, maxConcurrent: Int, maxQueueLength: Int) exte
     if (queue.isEmpty) {
       openSlotsCount += 1
     } else {
+      if (queue.size % 1000 == 0) logger.info(s"$name: action=dequeue, size=${queue.size}")
       run(queue.dequeue())
     }
   }
@@ -101,6 +102,9 @@ case class WorkQueue(name: String, maxConcurrent: Int, maxQueueLength: Int) exte
       } else {
         val promise = Promise[T]()
         queue += WorkItem(() => f, ctx, promise)
+
+        if (queue.size % 1000 == 0) logger.info(s"$name: action=enqueue, size=${queue.size}")
+
         promise.future
       }
     }

@@ -127,7 +127,7 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
         count.incrementAndGet()
         go.future.flatMap { _ =>
           if (i % 1000 == 0) println(s"Store $i")
-          store.store("task-1", original)
+          store.store(s"task-${i % 1000}", original)
         }
       })
 
@@ -139,7 +139,7 @@ class LazyCachingPersistenceStoreBenchmark extends InMemoryTestClass1Serializati
       val tmp = Future.sequence((1 to concurrentStores).map { i =>
         count.incrementAndGet()
         go.future.flatMap { _ =>
-          store.get("task-1")
+          store.get(s"task-${i % 1000}")
         }
       })
 
