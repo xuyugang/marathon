@@ -6,15 +6,6 @@ node('shakedown') {
   wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'XTerm']) {
     def timeout=360000
 
-    properties([
-      parameters([
-        string(name: 'dcos_url',
-          defaultValue: '',
-          description: 'URL to DC/OS Enterprise Cluster'
-        )]
-      )
-    ])
-
     stage('Checkout Repo') {
       checkout scm
     }
