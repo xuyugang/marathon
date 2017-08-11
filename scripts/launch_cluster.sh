@@ -40,4 +40,4 @@ EOF
 ./dcos-launch wait
 
 DCOS_URL=$(./dcos-launch describe | jq -r ".masters[0].public_ip")/
-echo "${DCOS_URL}" > "$WORKSPACE/dcos_url.properties"
+echo "http://${DCOS_URL}" > "$WORKSPACE/dcos_url.properties"
