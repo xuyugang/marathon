@@ -1,6 +1,7 @@
 package mesosphere.marathon
 package core.health.impl
 
+import akka.Done
 import akka.actor.{ Actor, ActorRef, Cancellable, Props }
 import akka.event.EventStream
 import akka.stream.Materializer
@@ -62,11 +63,14 @@ private[health] class HealthCheckActor(
     )
   }
 
-  def updateInstances(): Future[Unit] = {
+  def updateInstances(): Future[Done] = {
     instanceTracker.specInstances(app.id).map { instances =>
       self ! InstancesUpdate(version = app.version, instances = instances)
+      Done
     }.recover {
-      case t => logger.error("An error has occurred: " + t.getMessage, t)
+      case t =>
+        logger.error(s"An error has occurred: ${t.getMessage}", t)
+        Done
     }
   }
 
@@ -185,7 +189,7 @@ private[health] class HealthCheckActor(
     }
     updatedHealth.onComplete {
       case Success(newHealth) => self ! InstanceHealth(result, health, newHealth)
-      case Failure(t) => logger.error("An error has occurred: " + t.getMessage, t)
+      case Failure(t) => logger.error(s"An error has occurred: ${t.getMessage}", t)
     }
   }
 
