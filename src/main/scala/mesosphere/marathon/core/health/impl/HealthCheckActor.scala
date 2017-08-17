@@ -218,7 +218,7 @@ private[health] class HealthCheckActor(
       sender() ! AppHealth(healthByInstanceId.values.to[Seq])
 
     case Tick =>
-      updateInstances().andThen{ case _ => self ! ScheduleNextHealthCheck }
+      updateInstances().andThen{ case _ => self ! ScheduleNextHealthCheck() }
 
     case ScheduleNextHealthCheck(interval) =>
       scheduleNextHealthCheck(interval)
