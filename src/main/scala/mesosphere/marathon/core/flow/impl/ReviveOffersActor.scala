@@ -37,22 +37,33 @@ private[impl] class ReviveOffersActor(
     offersWanted: Observable[Boolean],
     driverHolder: MarathonSchedulerDriverHolder) extends Actor with StrictLogging {
 
+  import context.dispatcher
+
   private[impl] var subscription: Subscription = _
   private[impl] var offersCurrentlyWanted: Boolean = false
   private[impl] var revivesNeeded: Int = 0
   private[impl] var lastRevive: Timestamp = Timestamp(0)
   private[impl] var nextReviveCancellableOpt: Option[Cancellable] = None
 
+  private[impl] var regularOffers: Option[Cancellable] = None
+
   override def preStart(): Unit = {
     subscription = offersWanted.map(OffersWanted).subscribe(self ! _)
     marathonEventStream.subscribe(self, classOf[SchedulerRegisteredEvent])
     marathonEventStream.subscribe(self, classOf[SchedulerReregisteredEvent])
+
+    val suppressOffersMax = FiniteDuration(conf.suppressOffersMax(), MILLISECONDS)
+    regularOffers = Some(context.system.scheduler.schedule(suppressOffersMax, suppressOffersMax, self, OffersWanted(true)))
   }
 
   override def postStop(): Unit = {
     subscription.unsubscribe()
     nextReviveCancellableOpt.foreach(_.cancel())
     nextReviveCancellableOpt = None
+
+    regularOffers.foreach(_.cancel())
+    regularOffers = None
+
     marathonEventStream.unsubscribe(self)
   }
 
@@ -142,7 +153,6 @@ private[impl] class ReviveOffersActor(
   }
 
   protected def schedulerCheck(duration: FiniteDuration): Cancellable = {
-    import context.dispatcher
     context.system.scheduler.scheduleOnce(duration, self, ReviveOffersActor.TimedCheck)
   }
 }

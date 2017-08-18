@@ -2,6 +2,7 @@ package mesosphere.marathon
 package core.flow
 
 import org.rogach.scallop.ScallopConf
+import scala.concurrent.duration._
 
 trait ReviveOffersConfig extends ScallopConf {
 
@@ -22,4 +23,10 @@ trait ReviveOffersConfig extends ScallopConf {
     "revive_offers_repetitions",
     descr = "Repeat every reviveOffer request this many times, delayed by the --min_revive_offers_interval.",
     default = Some(3))
+
+  lazy val suppressOffersMax = opt[Long](
+    "suppress_offers_max",
+    descr = "Do not suppress offers longer than this interval even if no offers are wanted (ms).",
+    default = Some(5.minutes.toMillis)
+  )
 }
