@@ -41,6 +41,11 @@ def zipSandboxLogs(): Unit = {
 }
 
 @main
+def createRamlPackage(output: String): Unit = {
+  %("tar", "-zcf", output, "-C", "docs/docs", ".")
+}
+
+@main
 /**
  * Upload Marathon tgz tarballs and its cha1 checksum to S3.
  *
@@ -62,7 +67,13 @@ def uploadTarballToS3(): Option[awsClient.Artifact] = utils.stage("Upload Packag
 def createAndUploadPackages(): (String, Option[awsClient.Artifact]) = {
   val version = createPackages()
   val artifact = uploadTarballToS3()
+
   createLinuxPackages()
+
+  val ramlPackagePath = PACKAGE_DIR / s"marathon-raml-$version.tgz"
+  createRamlPackage(ramlPackagePath.toString)
+  awsClient.upload(ramlPackagePath)
+
   (version, artifact)
 }
 
