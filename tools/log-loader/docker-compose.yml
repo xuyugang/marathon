@@ -1,0 +1,13 @@
+elk:
+  image: sebp/elk:551
+  ports:
+    - "5601:5601"
+    - "9200:9200"
+    - "5044:5044"
+  volumes:
+       - ./data/logstash/conf:/etc/logstash/conf.d/
+       - ./logs:/opt/logs
+       - ./data/elastic/data:/var/lib/elasticsearch/
+       - ./data/elastic/log:/var/log/elasticsearch/
+       - ./bin/test-logstash-stdin.sh:/opt/tools/test-logstash-stdin.sh
+      #  ./data/logstash/log:/var/log/logstash/

@@ -1,0 +1,68 @@
+#!/usr/bin/env amm
+
+// Get a logging backend into classpath.
+import $ivy.`org.slf4j:slf4j-simple:1.7.25`
+
+import ammonite.ops._
+import ammonite.ops.ImplicitWd._
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration._
+import scala.util.control.NonFatal
+import scala.util.Try
+
+val ROOT_DIR: Path = pwd
+val DATA_DIR: Path = ROOT_DIR / 'data
+val ELASTIC_DATA_DIR: Path = DATA_DIR / 'elastic / 'data
+val ELASTIC_LOG_DIR: Path = DATA_DIR / 'elastic / 'log
+val LOGSTASH_CONF_DIR: Path = DATA_DIR / 'logstash / 'conf
+val LOGSTASH_TEMPLATE_DIR: Path = ROOT_DIR / 'templates
+val DEBUG_LOGS: Path = ROOT_DIR / 'logs
+
+/**
+ * Cleans ElasticSearch and logstash
+ * usually after done with analysis or proir to new analysis.
+ */
+@main
+def clean(): Unit = {
+  cleanES()
+}
+
+def cleanES(): Unit = {
+  rm! ELASTIC_DATA_DIR
+  mkdir! ELASTIC_DATA_DIR
+  rm! ELASTIC_LOG_DIR
+  mkdir! ELASTIC_LOG_DIR
+}
+
+def cleanLogStash(): Unit = {
+  rm! LOGSTASH_CONF_DIR
+  mkdir! LOGSTASH_CONF_DIR
+}
+
+@main
+def cleanDebugLogs(): Unit = {
+  val tmpDir: Path = tmp.dir()
+  mv.over(DEBUG_LOGS / "Readme.md", tmpDir / "Readme.md" )
+  rm! DEBUG_LOGS
+  mkdir! DEBUG_LOGS
+  mv.over(tmpDir / "Readme.md" , DEBUG_LOGS / "Readme.md")
+  rm! tmpDir
+}
+
+/**
+ * Launches ELK Stack
+ */
+@main
+def startELK(): Unit =  {
+  %("docker-compose", "up")
+}
+
+@main
+def cleanELK(): Unit = {
+  %('docker, "rm", "logloader_elk_1")
+}
+
+@main
+def execELK(): Unit = {
+  %('docker, "exec", "-it", "logloader_elk_1", "/bin/bash")
+}
