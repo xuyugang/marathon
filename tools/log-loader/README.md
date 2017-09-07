@@ -1,5 +1,11 @@
 Still WIP
 
+## Requires
+
+* docker (tested with 17.06.1-ce)
+* docker-compose (tested with 1.14 on Mac)
+* Ammonite (tested with 1.0.2)
+
 ## working logstash conf requires:
 
 create a single file or a folder of files with the following:
