@@ -61,6 +61,7 @@ class ForwarderService extends StrictLogging {
   }
 
   private def start(trustStore: Seq[String] = Nil, args: Seq[String] = Nil): Future[Done] = {
+    logger.info(s"Starting forwarder '${args.mkString(" ")}'")
     val java = sys.props.get("java.home").fold("java")(_ + "/bin/java")
     val cp = sys.props.getOrElse("java.class.path", "target/classes")
     val uuid = UUID.randomUUID().toString
@@ -77,7 +78,7 @@ class ForwarderService extends StrictLogging {
     val log = new ProcessLogger {
       def checkUp(s: String) = {
         logger.info(s)
-        if (!up.isCompleted && s.contains("ServerConnector@")) {
+        if (!up.isCompleted && s.contains("Started ServerConnector@")) {
           up.trySuccess(Done)
         }
       }
