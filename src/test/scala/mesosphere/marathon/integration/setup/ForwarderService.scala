@@ -1,6 +1,7 @@
 package mesosphere.marathon
 package integration.setup
 
+import java.net.BindException
 import java.util.UUID
 import javax.inject.{ Inject, Named }
 import javax.ws.rs.core.Response
@@ -78,8 +79,12 @@ class ForwarderService extends StrictLogging {
     val log = new ProcessLogger {
       def checkUp(s: String) = {
         logger.info(s)
-        if (!up.isCompleted && s.contains("Started ServerConnector@")) {
-          up.trySuccess(Done)
+        if (!up.isCompleted) {
+          if (s.contains("Started ServerConnector@")) {
+            up.trySuccess(Done)
+          } else if (s.contains("java.net.BindException: Address already in use")) {
+            up.tryFailure(new BindException("Address already in use"))
+          }
         }
       }
       override def out(s: => String): Unit = checkUp(s)
