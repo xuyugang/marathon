@@ -20,7 +20,7 @@ object PortAllocator extends StrictLogging {
   // and use the rest of the range as ports resources for mesos agents to offer e.g. --resources="ports:[10000-110000]"
   // IMPORTANT: These two ranges should NOT overlap!
   val PORT_RANGE_START = EPHEMERAL_PORT_MAX + 1
-  val PORT_RANGE_MAX = 65535
+  val PORT_RANGE_MAX = 60000 // 60001 - 61000 is reserved for port 0 random allocation. See ci/pipeline compileAndTest.
 
   // We use 2 different atomic counters: one for ephemeral ports and one for port ranges.
   private val ephemeralPorts: AtomicInteger = new AtomicInteger(EPHEMERAL_PORT_START)
