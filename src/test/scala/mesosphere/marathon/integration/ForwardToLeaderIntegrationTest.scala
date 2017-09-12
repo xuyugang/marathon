@@ -25,7 +25,7 @@ class ForwardToLeaderIntegrationTest extends AkkaIntegrationTest {
     }
   }
 
-  val forwarderStartTimeout = PatienceConfiguration.Timeout(Span(30, Seconds))
+  val forwarderStartTimeout = PatienceConfiguration.Timeout(Span(60, Seconds))
   val forwarderStartInterval = PatienceConfiguration.Interval(Span(5, Milliseconds))
 
   "ForwardingToLeader" should {
