@@ -27,6 +27,7 @@ val PACKAGE_DOCS_DIR: Path = pwd / 'target / "universal-docs"
 def compileAndTest(): Unit = utils.stage("Compile and Test") {
 
   // Set port range for random port 0 allocation.
+  %('sudo, "cat", "/proc/sys/net/ipv4/ip_local_port_range")
   %('sudo, "sysctl", "-w", "net.ipv4.ip_local_port_range=\"60001 61000\"")
 
   def run(cmd: String *) = utils.runWithTimeout(1.hour)(cmd)
