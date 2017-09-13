@@ -30,10 +30,16 @@ import scala.sys.process.{ Process, ProcessLogger }
   * Basically, the tests need to bring up a minimum version of the http service with leader forwarding enabled.
   */
 class ForwarderService extends StrictLogging {
+  private val services = Lock(ArrayBuffer.empty[Service])
   private val children = Lock(ArrayBuffer.empty[Process])
   private val uuids = Lock(ArrayBuffer.empty[String])
 
   def close(): Unit = {
+    services { all =>
+      all.foreach { s =>
+        s.stopAsync().awaitTerminated()
+      }
+    }
     children(_.par.foreach(_.destroy()))
     children(_.clear())
     uuids(_.foreach { id =>
@@ -51,14 +57,26 @@ class ForwarderService extends StrictLogging {
 
   def startHelloApp(httpArg: String = "--http_port", args: Seq[String] = Nil): Future[Int] = {
     val port = PortAllocator.ephemeralPort()
-    start(Nil, Seq("helloApp", httpArg, port.toString) ++ args).map(_ => port)(CallerThreadExecutionContext.callerThreadExecutionContext)
+    val service = ForwarderService.createHelloApp((Seq(httpArg, port.toString) ++ args): _*)
+    service.startAsync().awaitRunning()
+    services(_.append(service))
+    Future.successful(port)
+    //start(Nil, Seq("helloApp", httpArg, port.toString) ++ args).map(_ => port)(CallerThreadExecutionContext.callerThreadExecutionContext)
   }
 
   def startForwarder(forwardTo: Int, httpArg: String = "--http_port", trustStorePath: Option[String] = None,
     args: Seq[String] = Nil): Future[Int] = {
     val port = PortAllocator.ephemeralPort()
-    val trustStoreArgs = trustStorePath.map { p => List(s"-Djavax.net.ssl.trustStore=$p") }.getOrElse(List.empty)
-    start(trustStoreArgs, Seq("forwarder", forwardTo.toString, httpArg, port.toString) ++ args).map(_ => port)(CallerThreadExecutionContext.callerThreadExecutionContext)
+    trustStorePath match {
+      case None =>
+        val service = ForwarderService.createForwarder(forwardTo, (Seq(httpArg, port.toString) ++ args): _* )
+        service.startAsync().awaitRunning()
+        services(_.append(service))
+        Future.successful(port)
+      case Some(p) =>
+        val trustStoreArgs = List(s"-Djavax.net.ssl.trustStore=$p")
+        start(trustStoreArgs, Seq("forwarder", forwardTo.toString, httpArg, port.toString) ++ args).map(_ => port)(CallerThreadExecutionContext.callerThreadExecutionContext)
+    }
   }
 
   private def start(trustStore: Seq[String] = Nil, args: Seq[String] = Nil): Future[Done] = {
@@ -171,7 +189,7 @@ object ForwarderService extends StrictLogging {
     service.awaitTerminated()
   }
 
-  private def createHelloApp(args: String*): Service = {
+  def createHelloApp(args: String*): Service = {
     val conf = createConf(args: _*)
     logger.info(s"Start hello app at ${conf.httpPort()}")
     startImpl(conf, new LeaderInfoModule(elected = true, leaderHostPort = None))
