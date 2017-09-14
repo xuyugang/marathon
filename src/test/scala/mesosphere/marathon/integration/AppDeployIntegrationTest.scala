@@ -120,11 +120,9 @@ class AppDeployIntegrationTest extends AkkaIntegrationTest with EmbeddedMarathon
       waitForStatusUpdates("TASK_RUNNING", "TASK_FAILED")
 
       And("our app gets a backoff delay")
-      WaitTestSupport.waitUntil("queue item") {
+      WaitTestSupport.waitUntil("queue item", 1.seconds) {
         val queue: List[ITQueueItem] = marathon.launchQueue().value.queue
-        queue should have size 1
-        queue.map(_.delay.overdue) should contain(false)
-        true
+        queue.size == 1 && queue.map(_.delay.overdue).contains(true)
       }
       app
     }
