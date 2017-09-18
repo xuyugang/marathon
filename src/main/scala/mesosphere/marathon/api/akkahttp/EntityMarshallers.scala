@@ -5,12 +5,12 @@ import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
 import akka.http.scaladsl.model.MediaTypes.`application/json`
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.{ Rejection, RejectionError, Route }
-import akka.http.scaladsl.unmarshalling.{ FromMessageUnmarshaller, FromEntityUnmarshaller, Unmarshaller }
+import akka.http.scaladsl.unmarshalling.{ FromEntityUnmarshaller, FromMessageUnmarshaller, Unmarshaller }
 import akka.util.ByteString
 import com.wix.accord.{ Failure, Success, Validator }
 import kamon.metric.SubscriptionsDispatcher.TickMetricSnapshot
 import mesosphere.marathon.api.v2.Validation
-import mesosphere.marathon.core.appinfo.AppInfo
+import mesosphere.marathon.core.appinfo.{ AppInfo, EnrichedTask }
 import mesosphere.marathon.plugin.PathId
 import mesosphere.marathon.raml.{ LoggerChange, Metrics }
 import mesosphere.marathon.core.plugin.PluginDefinitions
@@ -99,7 +99,7 @@ object EntityMarshallers {
       raml.Raml.toRaml(appDefinition)
     }
 
-  implicit def appUpdateUnmarshaller(
+  def appUpdateUnmarshaller(
     appId: PathId, partialUpdate: Boolean)(
     implicit
     appUpdateNormalization: Normalization[raml.AppUpdate],
@@ -119,6 +119,19 @@ object EntityMarshallers {
       }
   }
 
+  def appUpdatesUnmarshaller(partialUpdate: Boolean)(
+    implicit
+    appUpdateNormalization: Normalization[raml.AppUpdate],
+    appNormalization: Normalization[raml.App]): FromEntityUnmarshaller[Seq[raml.AppUpdate]] = {
+    if (partialUpdate)
+      playJsonUnmarshaller[Seq[raml.AppUpdate]].map(_.map(appUpdateNormalization.normalized))
+    else
+      // this is a complete replacement of the app as we know it, so parse and normalize as if we're dealing
+      // with a brand new app because the rules are different (for example, many fields are non-optional with brand-new apps).
+      // the version is thrown away in toUpdate so just pass `zero` for now.
+      playJsonUnmarshaller[Seq[raml.App]].map(_.map(app => appNormalization.normalized(app).toRaml[raml.AppUpdate]))
+  }
+
   implicit val jsValueMarshaller = playJsonMarshaller[JsValue]
   implicit val wixResultMarshaller = playJsonMarshaller[com.wix.accord.Failure](Validation.failureWrites)
   implicit val messageMarshaller = playJsonMarshaller[Rejections.Message]
@@ -129,6 +142,7 @@ object EntityMarshallers {
   implicit val stringMapMarshaller = playJsonMarshaller[Map[String, String]]
   implicit val pluginDefinitionsMarshaller = playJsonMarshaller[PluginDefinitions]
   implicit val deploymentResultMarshaller = playJsonMarshaller[Messages.DeploymentResult]
+  implicit val enrichedTaskMarshaller = playJsonMarshaller[EnrichedTask]
 
   private def validEntityRaml[A, B](um: FromEntityUnmarshaller[A])(
     implicit
@@ -140,11 +154,11 @@ object EntityMarshallers {
         validator(normalized) match {
           case Success => normalized
           case failure: Failure =>
-            throw new RejectionError(ValidationFailed(failure))
+            throw RejectionError(ValidationFailed(failure))
         }
       } catch {
         case ValidationFailedException(_, failure) =>
-          throw new RejectionError(ValidationFailed(failure))
+          throw RejectionError(ValidationFailed(failure))
       }
     }
   }

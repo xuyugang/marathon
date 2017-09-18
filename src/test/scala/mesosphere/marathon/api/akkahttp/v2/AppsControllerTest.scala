@@ -1,30 +1,59 @@
 package mesosphere.marathon
-package api.v2
+package api.akkahttp.v2
 
+import java.time.OffsetDateTime
 import java.util
 import javax.ws.rs.core.Response
 
 import akka.Done
-import mesosphere.AkkaUnitTest
+import akka.http.scaladsl.model.Uri.Path
+import akka.http.scaladsl.model.{ ContentTypes, HttpEntity, StatusCodes, Uri }
+import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server._
+import akka.http.scaladsl.testkit.ScalatestRouteTest
+import akka.util.ByteString
+import mesosphere.{ AkkaUnitTest, UnitTest }
 import mesosphere.marathon.api._
-import mesosphere.marathon.api.v2.validation.NetworkValidationMessages
+import mesosphere.marathon.api.akkahttp.Headers
+import mesosphere.marathon.api.v2._
+import mesosphere.marathon.api.v2.validation.{ AppValidation, NetworkValidationMessages }
 import mesosphere.marathon.core.appinfo.AppInfo.Embed
-import mesosphere.marathon.core.appinfo._
-import mesosphere.marathon.test.SettableClock
+import mesosphere.marathon.core.appinfo.{ AppInfo, AppInfoService, Selector, TaskCounts }
 import mesosphere.marathon.core.deployment.DeploymentPlan
+import mesosphere.marathon.core.election.ElectionService
 import mesosphere.marathon.core.group.GroupManager
+import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.plugin.PluginManager
 import mesosphere.marathon.core.pod.ContainerNetwork
-import mesosphere.marathon.raml.{ Container => RamlContainer }
+import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.plugin.auth.{ Authenticator, Authorizer }
-import mesosphere.marathon.raml.{ App, AppSecretVolume, AppUpdate, ContainerPortMapping, DockerContainer, DockerNetwork, DockerPullConfig, EngineType, EnvVarValueOrSecret, IpAddress, IpDiscovery, IpDiscoveryPort, Network, NetworkMode, Raml, SecretDef }
+import mesosphere.marathon.raml.{
+  App,
+  AppSecretVolume,
+  AppUpdate,
+  ContainerPortMapping,
+  DockerContainer,
+  DockerNetwork,
+  DockerPullConfig,
+  EngineType,
+  EnvVarValueOrSecret,
+  IpAddress,
+  IpDiscovery,
+  IpDiscoveryPort,
+  Network,
+  NetworkMode,
+  Raml,
+  SecretDef,
+  Container => RamlContainer
+}
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state._
 import mesosphere.marathon.storage.repository.GroupRepository
-import mesosphere.marathon.test.GroupCreation
+import mesosphere.marathon.test.{ GroupCreation, SettableClock }
 import org.mockito.Matchers
+import org.mockito.Mockito.when
 import play.api.libs.json._
-import mesosphere.marathon.api.v2.validation.AppValidation
+import mesosphere.marathon.api.akkahttp.AkkaHttpMarathonService
 
 import scala.collection.immutable
 import scala.collection.immutable.Seq
@@ -32,8 +61,9 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Try
+import scala.util.control.NonFatal
 
-class AppsResourceTest extends AkkaUnitTest with GroupCreation {
+class AppsControllerTest extends UnitTest with GroupCreation with ScalatestRouteTest {
 
   case class Fixture(
       clock: SettableClock = new SettableClock(),
@@ -41,9 +71,14 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       appTaskResource: AppTasksResource = mock[AppTasksResource],
       service: MarathonSchedulerService = mock[MarathonSchedulerService],
       appInfoService: AppInfoService = mock[AppInfoService],
+      healthCheckManager: HealthCheckManager = mock[HealthCheckManager],
+      instanceTracker: InstanceTracker = mock[InstanceTracker],
+      taskKiller: TaskKiller = mock[TaskKiller],
       configArgs: Seq[String] = Seq("--enable_features", "external_volumes"),
       groupManager: GroupManager = mock[GroupManager]) {
     val config: AllConf = AllConf.withTestConfig(configArgs: _*)
+
+    //deprecated
     val appsResource: AppsResource = new AppsResource(
       clock,
       system.eventStream,
@@ -67,6 +102,26 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
     implicit val validateAndNormalizeAppUpdate: Normalization[raml.AppUpdate] =
       AppHelpers.appUpdateNormalization(config.availableFeatures, normalizationConfig)(AppNormalization.withCanonizedIds())
+
+    implicit val electionService: ElectionService = mock[ElectionService]
+
+    when(electionService.isLeader).thenReturn(true)
+
+    val appsController = new AppsController(
+      clock = clock,
+      eventBus = system.eventStream,
+      marathonSchedulerService = service,
+      appInfoService = appInfoService,
+      healthCheckManager = healthCheckManager,
+      instanceTracker = instanceTracker,
+      taskKiller = taskKiller,
+      config = config,
+      groupManager = groupManager,
+      pluginManager = PluginManager.None
+    )
+
+    implicit val rejectionHandler: RejectionHandler = AkkaHttpMarathonService.rejectionHandler
+    val route: Route = Route.seal(appsController.route)
 
     def normalize(app: App): App = {
       val migrated = AppNormalization.forDeprecated(normalizationConfig).normalized(app)
@@ -126,12 +181,35 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       appTaskResource: AppTasksResource = mock[AppTasksResource],
       service: MarathonSchedulerService = mock[MarathonSchedulerService],
       appInfoService: AppInfoService = mock[AppInfoService],
+      healthCheckManager: HealthCheckManager = mock[HealthCheckManager],
+      instanceTracker: InstanceTracker = mock[InstanceTracker],
+      taskKiller: TaskKiller = mock[TaskKiller],
       configArgs: Seq[String] = Seq("--enable_features", "external_volumes")) {
     val groupManagerFixture: TestGroupManagerFixture = new TestGroupManagerFixture(initialRoot = initialRoot)
     val groupManager: GroupManager = groupManagerFixture.groupManager
     val groupRepository: GroupRepository = groupManagerFixture.groupRepository
 
+    implicit val authenticator: Authenticator = auth.auth
+    implicit val authorizer: Authorizer = auth.auth
+
+    implicit val electionService: ElectionService = mock[ElectionService]
+
     val config: AllConf = AllConf.withTestConfig(configArgs: _*)
+
+    val appsController = new AppsController(
+      clock = clock,
+      eventBus = system.eventStream,
+      marathonSchedulerService = service,
+      appInfoService = appInfoService,
+      healthCheckManager = healthCheckManager,
+      instanceTracker = instanceTracker,
+      taskKiller = taskKiller,
+      config = config,
+      groupManager = groupManager,
+      pluginManager = PluginManager.None
+    )
+
+    //deprecated
     val appsResource: AppsResource = new AppsResource(
       clock,
       system.eventStream,
@@ -142,9 +220,10 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       groupManager,
       PluginManager.None
     )(auth.auth, auth.auth)
+
   }
 
-  "Apps Resource" should {
+  "Apps Controller" should {
     "Create a new app successfully" in new Fixture {
       Given("An app and group")
       val app = App(id = "/app", cmd = Some("cmd"))
@@ -152,12 +231,13 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
       When("The create request is made")
       clock += 5.seconds
-      val result = Try {
-        val response = appsResource.create(body, force = false, auth.request)
 
+      val entity = HttpEntity(body).withContentType(ContentTypes.`application/json`)
+
+      Post(Uri./, entity) ~> route ~> check {
         Then("It is successful")
-        response.getStatus should be(201)
-        response.getMetadata.containsKey(RestResource.DeploymentHeader) should be(true)
+        status shouldEqual StatusCodes.Created
+        header[Headers.`Marathon-Deployment-Id`] should not be 'empty
 
         And("the JSON is as expected, including a newly generated version")
         import mesosphere.marathon.api.v2.json.Formats._
@@ -167,15 +247,13 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
           maybeCounts = Some(TaskCounts.zero),
           maybeDeployments = Some(immutable.Seq(Identifiable(plan.id)))
         )
-        JsonTestHelper.assertThatJsonString(response.getEntity.asInstanceOf[String]).correspondsToJsonOf(expected)
-      }
-      if (!result.isSuccess) {
-        result.failed.foreach {
-          case v: ValidationFailedException =>
-            assert(result.isSuccess, s"JSON body = ${new String(body)} :: violations = ${v.failure.violations}")
-          case th =>
-            throw th
-        }
+
+        Try(JsonTestHelper.assertThatJsonString(responseAs[String]).correspondsToJsonOf(expected))
+          .recover {
+            case v: ValidationFailedException =>
+              throw new RuntimeException(s"JSON body = ${new String(body)} :: violations = ${v.failure.violations}")
+            case NonFatal(ex) => throw ex
+          }
       }
     }
 
@@ -193,11 +271,11 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
       When("The create request is made")
       clock += 5.seconds
-      val response = appsResource.create(body, force = false, auth.request)
-      val result = Try(prepareApp(app, groupManager))
-
-      Then("It is successful")
-      assert(response.getStatus == 201, s"body=${new String(body)}, response=${response.getEntity.asInstanceOf[String]}")
+      val entity = HttpEntity(body).withContentType(ContentTypes.`application/json`)
+      Post(Uri./, entity) ~> route ~> check {
+        Then("It is successful")
+        status shouldEqual StatusCodes.Created withClue s"body: ${ByteString(body).utf8String}, response: ${responseAs[String]}"
+      }
     }
 
     "Creating a new app with w/ Docker containerizer and a Docker config.json should fail" in new Fixture(configArgs = Seq("--enable_features", "secrets")) {
@@ -214,12 +292,12 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
       When("The create request is made")
       clock += 5.seconds
-      val response = appsResource.create(body, force = false, auth.request)
-      val result = Try(prepareApp(app, groupManager))
-
-      Then("It fails")
-      assert(response.getStatus == 422, s"body=${new String(body)}, response=${response.getEntity.asInstanceOf[String]}")
-      response.getEntity.toString should include("pullConfig is not supported with Docker containerizer")
+      val entity = HttpEntity(body).withContentType(ContentTypes.`application/json`)
+      Post(Uri./, entity) ~> route ~> check {
+        Then("It fails")
+        status shouldEqual StatusCodes.UnprocessableEntity withClue s"body: ${ByteString(body).utf8String}, response: ${responseAs[String]}"
+        responseAs[String] should include("pullConfig is not supported with Docker containerizer")
+      }
     }
 
     "Creating a new app with non-existing Docker config.json secret should fail" in new Fixture(configArgs = Seq("--enable_features", "secrets")) {
@@ -235,12 +313,12 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
       When("The create request is made")
       clock += 5.seconds
-      val response = appsResource.create(body, force = false, auth.request)
-      val result = Try(prepareApp(app, groupManager))
-
-      Then("It fails")
-      assert(response.getStatus == 422, s"body=${new String(body)}, response=${response.getEntity.asInstanceOf[String]}")
-      response.getEntity.toString should include("pullConfig.secret must refer to an existing secret")
+      val entity = HttpEntity(body).withContentType(ContentTypes.`application/json`)
+      Post(Uri./, entity) ~> route ~> check {
+        Then("It fails")
+        status shouldEqual StatusCodes.UnprocessableEntity withClue s"body: ${ByteString(body).utf8String}, response: ${responseAs[String]}"
+        responseAs[String] should include("pullConfig.secret must refer to an existing secret")
+      }
     }
 
     "Creation of an app with valid pull config should fail if secrets feature is disabled" in new Fixture {
@@ -255,16 +333,16 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
 
       When("The create request is made")
       clock += 5.seconds
-      val response = appsResource.create(body, force = false, auth.request)
-      val result = Try(prepareApp(app, groupManager))
+      val entity = HttpEntity(body).withContentType(ContentTypes.`application/json`)
+      Post(Uri./, entity) ~> route ~> check {
+        Then("It fails")
+        status shouldEqual StatusCodes.UnprocessableEntity withClue s"body: ${ByteString(body).utf8String}, response: ${responseAs[String]}"
 
-      Then("It is successful")
-      response.getStatus should be (422) withClue s"body=${new String(body)}, response=${response.getEntity.asInstanceOf[String]}"
-
-      val responseStr = response.getEntity.toString
-      responseStr should include("/container/docker/pullConfig")
-      responseStr should include("must be empty")
-      responseStr should include("Feature secrets is not enabled. Enable with --enable_features secrets)")
+        val responseStr = responseAs[String]
+        responseStr should include("/container/docker/pullConfig")
+        responseStr should include("must be empty")
+        responseStr should include("Feature secrets is not enabled. Enable with --enable_features secrets)")
+      }
     }
 
     "Do partial update with patch methods" in new Fixture {
@@ -280,11 +358,13 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       When("The application is updated")
       val updateRequest = App(id = id, instances = 2)
       val updatedBody = Json.stringify(Json.toJson(updateRequest)).getBytes("UTF-8")
-      val response = appsResource.patch(app.id, updatedBody, force = false, auth.request)
 
-      Then("It is successful")
-      response.getStatus should be(200)
-      response.getMetadata.containsKey(RestResource.DeploymentHeader) should be(true)
+      val entity = HttpEntity(updatedBody).withContentType(ContentTypes.`application/json`)
+      Patch(Uri./.withPath(Path(app.id)), entity) ~> route ~> check {
+        Then("It is successful")
+        status shouldEqual StatusCodes.OK
+        header[Headers.`Marathon-Deployment-Id`] should not be 'empty
+      }
     }
 
     "Fail creating application when network name is missing" in new Fixture {
@@ -296,11 +376,12 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       )
 
       When("The create request is made")
-      val response = appsResource.create(Json.stringify(Json.toJson(app)).getBytes("UTF-8"), force = false, auth.request)
-
-      Then("Validation fails")
-      response.getStatus should be(422)
-      response.getEntity.toString should include(NetworkValidationMessages.NetworkNameMustBeSpecified)
+      val entity = HttpEntity(Json.stringify(Json.toJson(app)).getBytes("UTF-8")).withContentType(ContentTypes.`application/json`)
+      Post(Uri./, entity) ~> route ~> check {
+        Then("Validation fails")
+        status shouldEqual StatusCodes.UnprocessableEntity
+        responseAs[String] should include(NetworkValidationMessages.NetworkNameMustBeSpecified)
+      }
     }
 
     "Create a new app with IP/CT, no default network name, Alice does not specify a network" in new Fixture {
@@ -596,29 +677,29 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       Given("An app and group")
       val body =
         """
-        | {
-        |   "id": "/app",
-        |   "cmd": "cmd",
-        |   "ipAddress": {
-        |     "networkName": "foo",
-        |     "discovery": {
-        |       "ports": [
-        |         { "number": 1, "name": "bob", "protocol": "tcp" }
-        |       ]
-        |     }
-        |   },
-        |   "container": {
-        |     "type": "DOCKER",
-        |     "docker": {
-        |       "image": "jdef/helpme",
-        |       "portMappings": [
-        |         { "containerPort": 0, "protocol": "tcp" }
-        |       ]
-        |     }
-        |   },
-        |   "portDefinitions": []
-        | }
-      """.stripMargin.getBytes
+          | {
+          |   "id": "/app",
+          |   "cmd": "cmd",
+          |   "ipAddress": {
+          |     "networkName": "foo",
+          |     "discovery": {
+          |       "ports": [
+          |         { "number": 1, "name": "bob", "protocol": "tcp" }
+          |       ]
+          |     }
+          |   },
+          |   "container": {
+          |     "type": "DOCKER",
+          |     "docker": {
+          |       "image": "jdef/helpme",
+          |       "portMappings": [
+          |         { "containerPort": 0, "protocol": "tcp" }
+          |       ]
+          |     }
+          |   },
+          |   "portDefinitions": []
+          | }
+        """.stripMargin.getBytes
 
       When("The create request is made")
       clock += 5.seconds
@@ -962,14 +1043,14 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
         createAppWithVolumes(
           "MESOS",
           """
-          |    "volumes": [{
-          |      "containerPath": "var",
-          |      "external": {
-          |        "size": 10
-          |      },
-          |      "mode": "RW"
-          |    }]
-        """.stripMargin, groupManager, appsResource, auth
+            |    "volumes": [{
+            |      "containerPath": "var",
+            |      "external": {
+            |        "size": 10
+            |      },
+            |      "mode": "RW"
+            |    }]
+          """.stripMargin, groupManager, appsResource, auth
         )
 
       Then("The return code indicates create failure")
@@ -1366,8 +1447,9 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       val apps = Set(app1, app2)
 
       def search(cmd: Option[String], id: Option[String], label: Option[String]): Set[AppDefinition] = {
-        val selector = appsResource.search(cmd, id, label)
-        apps.filter(selector.matches)
+        //        val selector = appsResource.search(cmd, id, label)
+        //        apps.filter(selector.matches)
+        ???
       }
 
       search(cmd = None, id = None, label = None) should be(Set(app1, app2))
@@ -1395,7 +1477,7 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       Given("An unauthenticated request")
       auth.authenticated = false
       val req = auth.request
-      val embed = new util.HashSet[String]()
+      val embed = new java.util.HashSet[String]()
       val app = """{"id":"/a/b/c","cmd":"foo","ports":[]}"""
       groupManager.rootGroup() returns createRootGroup()
 
@@ -1444,7 +1526,7 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       auth.authenticated = true
       auth.authorized = false
       val req = auth.request
-      val embed = new util.HashSet[String]()
+      val embed = new java.util.HashSet[String]()
       val app = """{"id":"/a","cmd":"foo","ports":[]}"""
 
       When("we try to create an app")
@@ -1549,23 +1631,23 @@ class AppsResourceTest extends AkkaUnitTest with GroupCreation {
       Given("An app with artifacts to fetch provided")
       val body =
         """
-           |{
-           |  "id": "/fetch",
-           |  "cmd": "sleep 600",
-           |  "cpus": 0.1,
-           |  "mem": 10,
-           |  "instances": 1,
-           |  "fetch": [
-           |    {
-           |      "uri": "file:///bin/bash",
-           |      "extract": false,
-           |      "executable": true,
-           |      "cache": false,
-           |      "destPath": "bash.copy"
-           |    }
-           |  ]
-           |}
-      """.stripMargin
+          |{
+          |  "id": "/fetch",
+          |  "cmd": "sleep 600",
+          |  "cpus": 0.1,
+          |  "mem": 10,
+          |  "instances": 1,
+          |  "fetch": [
+          |    {
+          |      "uri": "file:///bin/bash",
+          |      "extract": false,
+          |      "executable": true,
+          |      "cache": false,
+          |      "destPath": "bash.copy"
+          |    }
+          |  ]
+          |}
+        """.stripMargin
 
       When("The request is processed")
       val response = appsResource.create(body.getBytes("UTF-8"), false, auth.request)

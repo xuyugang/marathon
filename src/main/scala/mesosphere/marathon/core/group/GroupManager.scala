@@ -69,21 +69,21 @@ trait GroupManager {
   /**
     * Get a specific run spec by its Id
     * @param id The id of the runSpec
-    * @return The run spec if it is found, otherwise none.
+    * @return The run spec if it is found, otherwise None.
     */
   def runSpec(id: PathId): Option[RunSpec]
 
   /**
     * Get a specific app definition by its id.
     * @param id the id of the app.
-    * @return the app if it is found, otherwise false
+    * @return the app if it is found, otherwise None
     */
   def app(id: PathId): Option[AppDefinition]
 
   /**
     * Get a specific pod definition by its id.
     * @param id the id of the pod.
-    * @return the pod if it is found, otherwise false
+    * @return the pod if it is found, otherwise None
     */
   def pod(id: PathId): Option[PodDefinition]
 

@@ -4,8 +4,9 @@ package api.akkahttp
 import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.model.{ DateTime, HttpHeader, HttpMethods, HttpProtocols }
-import akka.http.scaladsl.server.PathMatcher.{ Matching, Matched, Unmatched }
-import akka.http.scaladsl.server.{ PathMatcher1, Directive0, Directive1, Directives => AkkaDirectives, Rejection }
+import akka.http.scaladsl.server.PathMatcher.{ Matched, Matching, Unmatched }
+import akka.http.scaladsl.server.{ Directive0, Directive1, PathMatcher1, Rejection, Directives => AkkaDirectives }
+import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.state.{ Group, PathId, RootGroup }
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -70,6 +71,8 @@ object Directives extends AuthDirectives with LeaderDirectives with AkkaDirectiv
 
     override def apply(path: Path) = iter(Nil, path, rootGroup)
   }
+
+  final val RemainingTaskId = Remaining.map(s => Task.Id(s))
 
   /**
     * Path matcher, that matches a segment only, if it is defined in the given set.

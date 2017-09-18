@@ -4,12 +4,13 @@ package api.v2
 import com.wix.accord.Validator
 import mesosphere.marathon.api.v2.Validation._
 import mesosphere.marathon.api.v2.validation.AppValidation
-import mesosphere.marathon.core.appinfo.{ Selector, AppSelector }
-import mesosphere.marathon.plugin.auth.{ AuthorizedAction, Authorizer, Identity, ViewRunSpec, UpdateRunSpec, CreateRunSpec }
+import mesosphere.marathon.core.appinfo.{ AppSelector, Selector }
+import mesosphere.marathon.plugin.auth.{ AuthorizedAction, Authorizer, CreateRunSpec, Identity, UpdateRunSpec, ViewRunSpec }
 import mesosphere.marathon.state.VersionInfo.OnlyVersion
 import mesosphere.marathon.state.{ AppDefinition, PathId }
-import mesosphere.marathon.raml.{ AppConversion, Raml }
+import mesosphere.marathon.raml.{ AppConversion, AppExternalVolume, AppPersistentVolume, Raml }
 import mesosphere.marathon.state.Timestamp
+import stream.Implicits._
 
 object AppHelpers {
 
@@ -17,7 +18,7 @@ object AppHelpers {
     enabledFeatures: Set[String], config: AppNormalization.Config): Normalization[raml.App] = Normalization { app =>
     validateOrThrow(app)(AppValidation.validateOldAppAPI)
     val migrated = AppNormalization.forDeprecated(config).normalized(app)
-    validateOrThrow(migrated)(AppValidation.validateCanonicalAppAPI(enabledFeatures))
+    validateOrThrow(migrated)(AppValidation.validateCanonicalAppAPI(enabledFeatures, () => config.defaultNetworkName))
     AppNormalization(config).normalized(migrated)
   }
 
@@ -25,7 +26,7 @@ object AppHelpers {
     enabledFeatures: Set[String], config: AppNormalization.Config): Normalization[raml.AppUpdate] = Normalization { app =>
     validateOrThrow(app)(AppValidation.validateOldAppUpdateAPI)
     val migrated = AppNormalization.forDeprecatedUpdates(config).normalized(app)
-    validateOrThrow(app)(AppValidation.validateCanonicalAppUpdateAPI(enabledFeatures))
+    validateOrThrow(app)(AppValidation.validateCanonicalAppUpdateAPI(enabledFeatures, () => config.defaultNetworkName))
     AppNormalization.forUpdates(config).normalized(migrated)
   }
 
@@ -38,8 +39,8 @@ object AppHelpers {
     val selectedStrategy = AppConversion.ResidencyAndUpgradeStrategy(
       residency = update.residency.map(Raml.fromRaml(_)),
       upgradeStrategy = update.upgradeStrategy.map(Raml.fromRaml(_)),
-      hasPersistentVolumes = update.container.exists(_.volumes.exists(_.persistent.nonEmpty)),
-      hasExternalVolumes = update.container.exists(_.volumes.exists(_.external.nonEmpty))
+      hasPersistentVolumes = update.container.exists(_.volumes.existsAn[AppPersistentVolume]),
+      hasExternalVolumes = update.container.exists(_.volumes.existsAn[AppExternalVolume])
     )
     val template = AppDefinition(
       appId, residency = selectedStrategy.residency, upgradeStrategy = selectedStrategy.upgradeStrategy)

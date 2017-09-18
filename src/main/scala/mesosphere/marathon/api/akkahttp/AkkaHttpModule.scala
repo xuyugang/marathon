@@ -10,13 +10,15 @@ import com.google.inject.AbstractModule
 import com.google.inject.{ Provides, Scopes, Singleton }
 import com.typesafe.config.Config
 import mesosphere.chaos.http.HttpConf
-import mesosphere.marathon.api.MarathonHttpService
+import mesosphere.marathon.api.{ MarathonHttpService, TaskKiller }
 import mesosphere.marathon.core.appinfo._
 import mesosphere.marathon.core.election.ElectionService
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.plugin.PluginManager
 import mesosphere.marathon.plugin.auth._
 import mesosphere.marathon.api.akkahttp.v2.{ AppsController, EventsController, PluginsController }
+import mesosphere.marathon.core.health.HealthCheckManager
+import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.plugin.http.HttpRequestHandler
 
 class AkkaHttpModule(conf: MarathonConf with HttpConf) extends AbstractModule {
@@ -40,15 +42,20 @@ class AkkaHttpModule(conf: MarathonConf with HttpConf) extends AbstractModule {
     materializer: Materializer,
     authenticator: Authenticator,
     authorizer: Authorizer,
-    electionService: ElectionService): AkkaHttpMarathonService = {
+    electionService: ElectionService,
+    healthCheckManager: HealthCheckManager,
+    instanceTracker: InstanceTracker,
+    taskKiller: TaskKiller): AkkaHttpMarathonService = {
 
     import actorSystem.dispatcher
     val appsController = new AppsController(
       clock = clock,
       eventBus = eventBus,
-      appTasksRes = appTasksRes,
-      service = marathonSchedulerService,
+      marathonSchedulerService = marathonSchedulerService,
       appInfoService = appInfoService,
+      healthCheckManager = healthCheckManager,
+      instanceTracker = instanceTracker,
+      taskKiller = taskKiller,
       config = conf,
       groupManager = groupManager,
       pluginManager = pluginManager)
