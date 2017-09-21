@@ -455,6 +455,13 @@ def test_private_repository_mesos_app():
     secret_value = json.dumps(secret_value_json)
 
     app_def = apps.private_ucr_docker_app()
+
+    # In strict mode all tasks are started as user `nobody` by default and `nobody`
+    # doesn't have permissions to write to /var/log within the container.
+    if shakedown.ee_version() == 'strict':
+        app_def['user'] = 'root'
+        common.add_dcos_marathon_root_user_acls()
+
     common.create_secret(secret_name, secret_value)
     client = marathon.create_client()
 

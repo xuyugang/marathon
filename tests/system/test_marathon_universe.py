@@ -28,6 +28,7 @@ def teardown_module(module):
     uninstall(SERVICE_NAME)
 
 
+@pytest.mark.skipif("shakedown.ee_version() == 'strict'", reason="MoM doesn't work on a strict cluster")
 def test_install_marathon():
     """Install the Marathon package for DC/OS.
     """
@@ -54,16 +55,9 @@ def test_install_marathon():
     # Reinstall
     shakedown.install_package_and_wait(PACKAGE_NAME)
     assert shakedown.package_installed(PACKAGE_NAME), 'Package failed to reinstall'
-    #
-    try:
-        shakedown.install_package(PACKAGE_NAME)
-    except Exception as e:
-        pass
-    else:
-        # Exception is not raised -> exit code was 0
-        assert False, "Error: CLI returns 0 when asked to install Marathon"
 
 
+@pytest.mark.skipif("shakedown.ee_version() == 'strict'", reason="MoM doesn't work on a strict cluster")
 def test_custom_service_name():
     """  Install MoM with a custom service name.
     """
@@ -80,7 +74,7 @@ def test_custom_service_name():
 
 @pytest.fixture(
     params=[
-        pytest.mark.skipif('shakedown.required_private_agents(4)')('cassandra'),
+        pytest.mark.skipif("shakedown.required_private_agents(4) or shakedown.ee_version() == 'strict'")('cassandra')
     ])
 def package(request):
     package_name = request.param
@@ -121,6 +115,7 @@ def neo_package(request):
         print(e)
 
 
+@shakedown.private_agents(2)
 def test_neo4j_universe_package_install(neo_package):
     """ Neo4j used to be 1 of the universe packages tested above, largely
         because there was a bug in marathon for a short period of time
@@ -132,7 +127,7 @@ def test_neo4j_universe_package_install(neo_package):
     shakedown.install_package(package)
     shakedown.deployment_wait(timeout=timedelta(minutes=5).total_seconds(), app_id='neo4j/core')
 
-    assert shakedown.package_installed(package), 'Package failed to install'    
+    assert shakedown.package_installed(package), 'Package failed to install'
 
     marathon_client = marathon.create_client()
     tasks = marathon_client.get_tasks('neo4j/core')
