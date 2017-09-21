@@ -410,6 +410,7 @@ trait AppValidation {
     app.secrets is valid(featureEnabledImplies(enabledFeatures, Features.SECRETS)(every(secretEntryValidator)))
     app.env is envValidator(strictNameValidation = false, app.secrets, enabledFeatures)
     app.acceptedResourceRoles is valid(optional(ResourceRole.validAcceptedResourceRoles(app.residency.isDefined) and notEmpty))
+    app must complyWithResourceAllocationRules
     app must complyWithGpuRules(enabledFeatures)
     app must complyWithMigrationAPI
     app must complyWithReadinessCheckRules
@@ -474,6 +475,12 @@ trait AppValidation {
         !app.container.exists(_.`type` == EngineType.Docker)
       } and featureEnabled(enabledFeatures, Features.GPU_RESOURCES)
     }
+
+  private val complyWithResourceAllocationRules: Validator[App] = validator[App] { app =>
+    app.mem should be > 0.0
+    app.cpus should be > 0.0
+    app.instances should be > 0
+  }
 
   private def portIndexIsValid(hostPortsIndices: Range): Validator[AppHealthCheck] = {
     val marathonProtocols = Set(AppHealthCheckProtocol.Http, AppHealthCheckProtocol.Https, AppHealthCheckProtocol.Tcp)

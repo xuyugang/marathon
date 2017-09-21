@@ -8,10 +8,11 @@ import akka.event.EventStream
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.{ StatusCodes, Uri }
 import akka.http.scaladsl.model.headers.Location
-import akka.http.scaladsl.server.{ Directive1, Rejection, RejectionError, Route }
+import akka.http.scaladsl.server.{ AuthorizationFailedRejection, Directive1, Rejection, RejectionError, Route }
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
 import mesosphere.marathon.api.TaskKiller
+import mesosphere.marathon.api.akkahttp.AuthDirectives.NotAuthorized
 import mesosphere.marathon.api.v2.{ AppHelpers, AppNormalization, InfoEmbedResolver, LabelSelectorParsers }
 import mesosphere.marathon.api.akkahttp.{ Controller, EntityMarshallers }
 import mesosphere.marathon.api.v2.AppHelpers.{ appNormalization, appUpdateNormalization, authzSelector }
@@ -72,19 +73,26 @@ class AppsController(
   private def listApps(implicit identity: Identity): Route = {
     parameters('cmd.?, 'id.?, 'label.?, 'embed.*) { (cmd, id, label, embed) =>
       def index: Future[Seq[AppInfo]] = {
-        def containCaseInsensitive(a: String, b: String): Boolean = b.toLowerCase contains a.toLowerCase
-
-        val selectors = Seq[Option[Selector[AppDefinition]]](
-          cmd.map(c => Selector(_.cmd.exists(containCaseInsensitive(c, _)))),
-          id.map(s => Selector(app => containCaseInsensitive(s, app.id.toString))),
-          label.map(new LabelSelectorParsers().parsed),
-          Some(authzSelector)
-        ).flatten
         val resolvedEmbed = InfoEmbedResolver.resolveApp(embed.toSet) + AppInfo.Embed.Counts + AppInfo.Embed.Deployments
-        appInfoService.selectAppsBy(Selector.forall(selectors), resolvedEmbed)
+        val selector = selectAuthorized(search(cmd, id, label))
+        appInfoService.selectAppsBy(selector, resolvedEmbed)
       }
       onSuccess(index)(apps => complete(Json.obj("apps" -> apps)))
     }
+  }
+
+  private[v2] def search(cmd: Option[String], id: Option[String], label: Option[String]): AppSelector = {
+    def containCaseInsensitive(a: String, b: String): Boolean = b.toLowerCase contains a.toLowerCase
+    val selectors = Seq[Option[Selector[AppDefinition]]](
+      cmd.map(c => Selector(_.cmd.exists(containCaseInsensitive(c, _)))),
+      id.map(s => Selector(app => containCaseInsensitive(s, app.id.toString))),
+      label.map(new LabelSelectorParsers().parsed)
+    ).flatten
+    Selector.forall(selectors)
+  }
+
+  private[v2] def selectAuthorized(fn: => AppSelector)(implicit identity: Identity): AppSelector = {
+    Selector.forall(Seq(authzSelector, fn))
   }
 
   private def replaceMultipleApps(implicit identity: Identity): Route = {
@@ -138,7 +146,7 @@ class AppsController(
         case None =>
           reject(Rejections.EntityNotFound.app(appId))
         case Some(info) =>
-          authorized(ViewResource, info.app, Rejections.EntityNotFound.app(appId)).apply {
+          authorized(ViewResource, info.app).apply {
             complete(Json.obj("app" -> info))
           }
       }
@@ -166,7 +174,7 @@ class AppsController(
         val fn = updateOrCreate(
           appId, _: Option[AppDefinition], appUpdate, partialUpdate, allowCreation, clock.now(), marathonSchedulerService)
 
-        onSuccessLegacy(appId)(groupManager.updateApp(appId, fn, version, force)).apply { plan =>
+        onSuccessLegacy(Some(appId))(groupManager.updateApp(appId, fn, version, force)).apply { plan =>
           plan.target.app(appId).foreach { appDef =>
             eventBus.publish(ApiPostEvent(remoteAddr.toString, requestUri.toString, appDef))
           }
@@ -188,7 +196,7 @@ class AppsController(
         }
       }
 
-      onSuccess(groupManager.updateRoot(PathId.empty, updateGroup, version, force)) { plan =>
+      onSuccessLegacy(None)(groupManager.updateRoot(PathId.empty, updateGroup, version, force)).apply { plan =>
         complete((StatusCodes.OK, List(Headers.`Marathon-Deployment-Id`(plan.id)), Messages.DeploymentResult(plan)))
       }
     }
@@ -206,7 +214,7 @@ class AppsController(
     * It'd be neat if we didn't need this. Would take some heavy-ish refactoring to get all of the update functions to
     * take an either.
     */
-  private def onSuccessLegacy[T](appId: PathId)(f: => Future[T])(implicit identity: Identity): Directive1[T] = onComplete({
+  private def onSuccessLegacy[T](maybeAppId: Option[PathId])(f: => Future[T])(implicit identity: Identity): Directive1[T] = onComplete({
     try { f }
     catch {
       case NonFatal(ex) =>
@@ -220,7 +228,13 @@ class AppsController(
     case Failure(AccessDeniedException(msg)) =>
       reject(AuthDirectives.NotAuthorized(HttpPluginFacade.response(authorizer.handleNotAuthorized(identity, _))))
     case Failure(_: AppNotFoundException) =>
-      reject(Rejections.EntityNotFound.app(appId))
+      reject(
+        maybeAppId.map { appId =>
+          Rejections.EntityNotFound.app(appId)
+        } getOrElse Rejections.EntityNotFound()
+      )
+    case Failure(RejectionError(rejection)) =>
+      reject(rejection)
     case Failure(ex) =>
       throw ex
   }
@@ -238,6 +252,9 @@ class AppsController(
       lazy val notFound: Either[Rejection, RootGroup] =
         Left(Rejections.EntityNotFound.app(appId))
 
+      lazy val notAuthorized: Either[Rejection, RootGroup] =
+        Left(NotAuthorized(HttpPluginFacade.response(authorizer.handleNotAuthorized(identity, _))))
+
       def deleteApp(rootGroup: RootGroup): Either[Rejection, RootGroup] = {
         rootGroup.app(appId) match {
           case None =>
@@ -246,7 +263,7 @@ class AppsController(
             if (authorizer.isAuthorized(identity, DeleteRunSpec, app))
               Right(rootGroup.removeApp(appId))
             else
-              notFound
+              notAuthorized
         }
       }
 
@@ -256,7 +273,7 @@ class AppsController(
     }
 
   private def rejectLeftViaThrow[T](t: Either[Rejection, T]): T = t match {
-    case Left(r) => throw new RejectionError(r)
+    case Left(r) => throw RejectionError(r)
     case Right(t) => t
   }
 
@@ -270,12 +287,12 @@ class AppsController(
 
       val newVersion = clock.now()
 
-      onSuccess(
+      onSuccessLegacy(Some(appId))(
         groupManager.updateApp(
           appId,
           { app => rejectLeftViaThrow(markForRestartingOrThrow(app)) },
           newVersion, force)
-      ) { restartDeployment =>
+      ).apply { restartDeployment =>
           completeWithDeploymentForApp(appId, restartDeployment)
         }
     }
@@ -391,7 +408,7 @@ class AppsController(
   }
 
   // format: OFF
-  val route: Route = extractRequest { req =>
+  val route: Route = {
     asLeader(electionService) {
       authenticated.apply { implicit identity =>
         pathEndOrSingleSlash {
@@ -408,7 +425,7 @@ class AppsController(
             createApp
           }
         } ~
-        pathPrefix(ExistingAppPathId(groupManager.rootGroup())) { appId =>
+        extractExistingAppId(groupManager.rootGroup()) { appId =>
           pathEndOrSingleSlash {
             get {
               showApp(appId)

@@ -352,6 +352,3 @@ class AppsResource @Inject() (
     Selector.forall(Seq(authzSelector, fn))
   }
 }
-
-object AppsResource {
-}

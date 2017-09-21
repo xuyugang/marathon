@@ -5,9 +5,12 @@ import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.model.{ DateTime, HttpHeader, HttpMethods, HttpProtocols }
 import akka.http.scaladsl.server.PathMatcher.{ Matched, Matching, Unmatched }
-import akka.http.scaladsl.server.{ Directive0, Directive1, PathMatcher1, Rejection, Directives => AkkaDirectives }
+import akka.http.scaladsl.server.directives.BasicDirectives.{ extract, mapRequestContext, tprovide }
+import akka.http.scaladsl.server.directives.RouteDirectives.reject
+import akka.http.scaladsl.server.{ Directive, Directive0, Directive1, PathMatcher, PathMatcher1, Rejection, Directives => AkkaDirectives }
 import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.state.{ Group, PathId, RootGroup }
+
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
@@ -56,7 +59,7 @@ object Directives extends AuthDirectives with LeaderDirectives with AkkaDirectiv
       case Path.Slash(rest) =>
         iter(reversePieces, rest, group)
       case Path.Segment(segment, rest) =>
-        val appended = (segment :: reversePieces)
+        val appended = segment :: reversePieces
         val pathId = PathId.sanitized(appended.reverse, true)
         if (group.groupsById.contains(pathId)) {
           iter(appended, rest, group.groupsById(pathId))
@@ -82,6 +85,46 @@ object Directives extends AuthDirectives with LeaderDirectives with AkkaDirectiv
     def apply(path: Path) = path match {
       case Path.Segment(segment, tail) if set(segment) ⇒ Matched(tail, Tuple1(segment))
       case _ ⇒ Unmatched
+    }
+  }
+
+  private val marathonApiKeywords = Set("restart", "tasks", "versions")
+
+  private[akkahttp] def findSomethingLikeAppId(remainingPath: Path, extractedAppName: Path = Path.Empty): Option[PathId] = {
+    def generatePathId(p: Path): PathId = {
+      val trimmed = p.toString().reverse.dropWhile(_ == '/').reverse
+      PathId(trimmed)
+    }
+
+    remainingPath match {
+      case Path.Slash(rest) =>
+        findSomethingLikeAppId(rest, extractedAppName ++ Path./)
+      case p @ Path.Segment(segment, rest) =>
+        if (marathonApiKeywords.contains(segment)) {
+          Some(generatePathId(extractedAppName))
+        } else {
+          findSomethingLikeAppId(rest, extractedAppName + segment)
+        }
+      case Path.Empty =>
+        if (extractedAppName.isEmpty) {
+          None
+        } else {
+          Some(generatePathId(extractedAppName))
+        }
+    }
+  }
+
+  def extractExistingAppId(rootGroup: RootGroup): Directive1[PathId] = {
+    val pm = Slash ~ ExistingAppPathId(rootGroup)
+    implicit val LIsTuple = pm.ev
+    extract(ctx ⇒ pm(ctx.unmatchedPath) -> ctx.unmatchedPath).flatMap {
+      case (Matched(rest, values), _) =>
+        tprovide(values) & mapRequestContext(_ withUnmatchedPath rest)
+      case (Unmatched, path) =>
+        val rejection: Rejection = findSomethingLikeAppId(path)
+          .map(Rejections.EntityNotFound.app(_))
+          .getOrElse(Rejections.EntityNotFound())
+        reject(rejection)
     }
   }
 

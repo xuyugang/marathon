@@ -15,7 +15,10 @@ import mesosphere.marathon.plugin.PathId
 import mesosphere.marathon.raml.{LoggerChange, Metrics}
 import mesosphere.marathon.core.plugin.PluginDefinitions
 import mesosphere.marathon.state.AppDefinition
+import play.api.data.validation.ValidationError
 import play.api.libs.json._
+
+import scala.util.Try
 
 object EntityMarshallers {
   import Directives.complete
@@ -100,7 +103,7 @@ object EntityMarshallers {
     implicit
     normalization: Normalization[raml.App],
     validator: Validator[AppDefinition]): FromEntityUnmarshaller[AppDefinition] = {
-    validEntityRaml(playJsonUnmarshaller[raml.App])
+    validEntityRaml(playJsonUnmarshaller[raml.App]).handleValidationErrors
   }
 
   implicit val appDefinitionMarshaller: ToEntityMarshaller[AppDefinition] =
@@ -113,11 +116,11 @@ object EntityMarshallers {
     implicit
     appUpdateNormalization: Normalization[raml.AppUpdate],
     appNormalization: Normalization[raml.App]): FromEntityUnmarshaller[raml.AppUpdate] = {
-    if (partialUpdate)
+    if (partialUpdate) {
       playJsonUnmarshaller[raml.AppUpdate].map { appUpdate =>
         appUpdateNormalization.normalized(appUpdate.copy(id = Some(appId.toString)))
       }
-    else
+    } else
       playJsonUnmarshaller[JsObject].map { jsObj =>
         // this is a complete replacement of the app as we know it, so parse and normalize as if we're dealing
         // with a brand new app because the rules are different (for example, many fields are non-optional with brand-new apps).
@@ -126,7 +129,7 @@ object EntityMarshallers {
         val app = (jsObj + ("id" -> JsString(appId.toString))).as[raml.App]
         appNormalization.normalized(app).toRaml[raml.AppUpdate]
       }
-  }
+  }.handleValidationErrors
 
   def appUpdatesUnmarshaller(partialUpdate: Boolean)(
     implicit
@@ -153,9 +156,18 @@ object EntityMarshallers {
   implicit val deploymentResultMarshaller = playJsonMarshaller[Messages.DeploymentResult]
   implicit val enrichedTaskMarshaller = playJsonMarshaller[EnrichedTask]
 
+  implicit class FromEntityUnmarshallerOps[T](val um: FromEntityUnmarshaller[T]) extends AnyVal {
+    def handleValidationErrors: FromEntityUnmarshaller[T] = um.recover(_ ⇒ _ ⇒ {
+      case ValidationFailedException(_, failure) =>
+        throw RejectionError(ValidationFailed(failure))
+    })
+  }
+
   private def validEntityRaml[A, B](um: FromEntityUnmarshaller[A])(
     implicit
-    normalization: Normalization[A], reader: raml.Reads[A, B], validator: Validator[B]): FromEntityUnmarshaller[B] = {
+    normalization: Normalization[A],
+    reader: raml.Reads[A, B],
+    validator: Validator[B]): FromEntityUnmarshaller[B] = {
     um.map { ent =>
       try {
         // Note: Normalization also validates which can throw an exception

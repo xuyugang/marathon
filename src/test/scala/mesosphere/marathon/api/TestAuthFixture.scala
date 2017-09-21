@@ -20,8 +20,8 @@ class TestAuthFixture() extends Mockito {
   @volatile var authorized: Boolean = true
   var authFn: Any => Boolean = { _ => true }
 
-  val UnauthorizedStatus = 401
-  val NotAuthenticatedStatus = 403
+  val UnauthorizedStatus = 403
+  val NotAuthenticatedStatus = 401
 
   def auth: Auth = new Authorizer with Authenticator {
     override def authenticate(request: HttpRequest): Future[Option[Identity]] = {
