@@ -1,24 +1,21 @@
 package mesosphere.marathon
 package api.akkahttp
 
-import akka.http.scaladsl.marshalling.{Marshaller, ToEntityMarshaller}
+import akka.http.scaladsl.marshalling.{ Marshaller, ToEntityMarshaller }
 import akka.http.scaladsl.model.MediaTypes.`application/json`
 import akka.http.scaladsl.model.StatusCodes
-import akka.http.scaladsl.server.{Rejection, RejectionError, Route}
-import akka.http.scaladsl.unmarshalling.{FromEntityUnmarshaller, FromMessageUnmarshaller, Unmarshaller}
+import akka.http.scaladsl.server.{ Rejection, RejectionError, Route }
+import akka.http.scaladsl.unmarshalling.{ FromEntityUnmarshaller, FromMessageUnmarshaller, Unmarshaller }
 import akka.util.ByteString
-import com.wix.accord.{Failure, RuleViolation, Success, Validator}
+import com.wix.accord.{ Failure, RuleViolation, Success, Validator }
 import kamon.metric.SubscriptionsDispatcher.TickMetricSnapshot
 import mesosphere.marathon.api.v2.Validation
 import mesosphere.marathon.core.appinfo.{ AppInfo, EnrichedTask }
 import mesosphere.marathon.plugin.PathId
-import mesosphere.marathon.raml.{LoggerChange, Metrics}
+import mesosphere.marathon.raml.{ LoggerChange, Metrics }
 import mesosphere.marathon.core.plugin.PluginDefinitions
 import mesosphere.marathon.state.AppDefinition
-import play.api.data.validation.ValidationError
 import play.api.libs.json._
-
-import scala.util.Try
 
 object EntityMarshallers {
   import Directives.complete

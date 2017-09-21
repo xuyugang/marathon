@@ -49,7 +49,10 @@ class AppsControllerTest extends UnitTest with GroupCreation with ScalatestRoute
 
   case class Fixture(
       clock: SettableClock = new SettableClock(),
-      auth: TestAuthFixture = new TestAuthFixture,
+      auth: TestAuthFixture = new TestAuthFixture {
+        override val UnauthorizedStatus = 403
+        override val NotAuthenticatedStatus = 401
+      },
       appTaskResource: AppTasksResource = mock[AppTasksResource],
       service: MarathonSchedulerService = mock[MarathonSchedulerService],
       appInfoService: AppInfoService = mock[AppInfoService],
@@ -158,7 +161,10 @@ class AppsControllerTest extends UnitTest with GroupCreation with ScalatestRoute
   case class FixtureWithRealGroupManager(
       initialRoot: RootGroup = RootGroup.empty,
       clock: SettableClock = new SettableClock(),
-      auth: TestAuthFixture = new TestAuthFixture,
+      auth: TestAuthFixture = new TestAuthFixture {
+        override val UnauthorizedStatus = 403
+        override val NotAuthenticatedStatus = 401
+      },
       appTaskResource: AppTasksResource = mock[AppTasksResource],
       service: MarathonSchedulerService = mock[MarathonSchedulerService],
       appInfoService: AppInfoService = mock[AppInfoService],
