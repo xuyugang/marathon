@@ -42,4 +42,22 @@ class PathMatchersTest extends UnitTest with GroupCreation with ScalatestRouteTe
       ExistingAppPathId(rootGroup)(Path("test/group1/app1/restart/ponies")) shouldBe Matched(Path("/restart/ponies"), Tuple1("/test/group1/app1".toPath))
     }
   }
+
+  "AppPathIdLike matcher" should {
+    "stop matching when it reaches a Marathon API keyword" in {
+      AppPathIdLike(Path("test/group/restart/ponies")) shouldBe Matched(Path("/restart/ponies"), Tuple1("/test/group".toPath))
+    }
+
+    "match all the way to to the end" in {
+      AppPathIdLike(Path("test/group1/app1")) shouldBe Matched(Path.Empty, Tuple1("/test/group1/app1".toPath))
+    }
+
+    "considers empty paths as non-matches" in {
+      AppPathIdLike(Path("/")) shouldBe Unmatched
+    }
+
+    "considers it an unmatch if path starts with keyword" in {
+      AppPathIdLike(Path("/restart")) shouldBe Unmatched
+    }
+  }
 }

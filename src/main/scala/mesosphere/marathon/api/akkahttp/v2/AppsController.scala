@@ -8,6 +8,7 @@ import akka.event.EventStream
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Route
+import mesosphere.marathon.api.akkahttp.PathMatchers.{ ExistingAppPathId, AppPathIdLike }
 import mesosphere.marathon.api.v2.{ AppNormalization, AppTasksResource, InfoEmbedResolver, LabelSelectorParsers }
 import mesosphere.marathon.api.akkahttp.{ Controller, EntityMarshallers }
 import mesosphere.marathon.api.v2.AppsResource.{ NormalizationConfig, authzSelector }
@@ -127,13 +128,16 @@ class AppsController(
               listApps
             }
         } ~
-          path(RemainingPathId) { appId =>
+          path(ExistingAppPathId(groupManager.rootGroup())) { appId =>
             get {
               showApp(appId)
             } ~
               patch {
                 complete("TODO")
               }
+          } ~
+          path(AppPathIdLike) { nonExistingAppId =>
+            reject(Rejections.EntityNotFound.app(nonExistingAppId))
           }
       }
     }

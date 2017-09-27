@@ -2,6 +2,7 @@ package mesosphere.marathon
 package api.akkahttp
 
 import akka.http.scaladsl.model.Uri.Path
+import akka.http.scaladsl.server.PathMatcher
 import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.state.{ Group, PathId, RootGroup, Timestamp }
 import akka.http.scaladsl.server.Directives._
@@ -38,7 +39,7 @@ object PathMatchers {
     * leaving the rest of the matcher to match the rest
     */
   case class ExistingAppPathId(rootGroup: RootGroup) extends PathMatcher1[PathId] {
-    import akka.http.scaladsl.server.PathMatcher._
+    import PathMatcher._
 
     @tailrec final def iter(reversePieces: List[String], remaining: Path, group: Group): Matching[Tuple1[PathId]] = remaining match {
       case Path.Slash(rest) =>
@@ -58,6 +59,27 @@ object PathMatchers {
     }
 
     override def apply(path: Path) = iter(Nil, path, rootGroup)
+  }
+
+  private val marathonApiKeywords = Set("restart", "tasks", "versions")
+
+  case object AppPathIdLike extends PathMatcher1[PathId] {
+    import PathMatcher._
+
+    @tailrec final def iter(reversePieces: List[String], remaining: Path, consumedSlash: Option[Path] = None): Matching[Tuple1[PathId]] = remaining match {
+      case slash @ Path.Slash(rest) =>
+        iter(reversePieces, rest, Some(slash))
+      case Path.Segment(segment, rest) if !marathonApiKeywords(segment) =>
+        iter(segment :: reversePieces, rest)
+      case _ if reversePieces.isEmpty =>
+        Unmatched
+      case remaining =>
+        Matched(
+          consumedSlash.getOrElse(remaining),
+          Tuple1(PathId.sanitized(reversePieces.reverse)))
+    }
+
+    override def apply(path: Path) = iter(Nil, path)
   }
 
   /**

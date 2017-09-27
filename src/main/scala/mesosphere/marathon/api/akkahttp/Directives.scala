@@ -1,15 +1,11 @@
 package mesosphere.marathon
 package api.akkahttp
 
-import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.model.{ DateTime, HttpHeader, HttpMethods, HttpProtocols }
-import akka.http.scaladsl.server.PathMatcher.{ Matched, Unmatched }
-import akka.http.scaladsl.server.{ Directive0, Directive1, Rejection, Directives => AkkaDirectives }
-import mesosphere.marathon.state.{ Group, PathId, RootGroup }
+import akka.http.scaladsl.server.{ Directive0, Directives => AkkaDirectives }
 
 import scala.concurrent.duration._
-import PathMatchers._
 
 /**
   * All Marathon Directives and Akka Directives
@@ -19,61 +15,6 @@ import PathMatchers._
 object Directives extends AuthDirectives with LeaderDirectives with AkkaDirectives {
 
   private val marathonApiKeywords = Set("restart", "tasks", "versions")
-
-  //basically it's equivalent to path.takeWhile(s => !marathonApiKeywords.contains(s)) map createPathId
-  private[akkahttp] def findAppId(remainingPath: Path, extractedAppName: Path = Path.Empty): Option[PathId] = {
-    //transforming Path to PathId
-    def generatePathId(p: Path): PathId = {
-      val trimmed = p.toString().reverse.dropWhile(_ == '/').reverse
-      PathId(trimmed)
-    }
-
-    remainingPath match {
-      case Path.Slash(rest) =>
-        findAppId(rest, extractedAppName ++ Path./)
-      case p @ Path.Segment(segment, rest) =>
-        if (marathonApiKeywords.contains(segment)) {
-          Some(generatePathId(extractedAppName))
-        } else {
-          findAppId(rest, extractedAppName + segment)
-        }
-      case Path.Empty =>
-        if (extractedAppName.isEmpty) {
-          None
-        } else {
-          Some(generatePathId(extractedAppName))
-        }
-    }
-  }
-
-  /**
-    * Given the current root group, only extract an existing appId
-    *
-    * This is useful because our v2 API has an unfortunate design decision which leads to ambiguity in our URLs, such as:
-    *
-    *   POST /v2/apps/my-group/restart/restart
-    *
-    * The intention here is to restart the app named "my-group/restart"
-    *
-    * Given the url above, this directive will only extract "my-group/restart" from the path, leaving the rest.
-    *
-    * In case there is no appId exists, it will do best-efforts attempt to find an invalid appId and generate a rejection.
-    *
-    * Inspired by path matching directive in akka-http.
-    */
-  def extractExistingAppId(rootGroup: RootGroup): Directive1[PathId] = {
-    val pm = Slash ~ ExistingAppPathId(rootGroup)
-    implicit val LIsTuple = pm.ev
-    extract(ctx ⇒ pm(ctx.unmatchedPath) -> ctx.unmatchedPath).flatMap {
-      case (Matched(rest, values), _) =>
-        tprovide(values) & mapRequestContext(_ withUnmatchedPath rest)
-      case (Unmatched, path) =>
-        val rejection: Rejection = findAppId(path)
-          .map(Rejections.EntityNotFound.app(_))
-          .getOrElse(Rejections.EntityNotFound())
-        reject(rejection)
-    }
-  }
 
   /**
     * Use this directive to enable Cross Origin Resource Sharing for a given set of origins.
