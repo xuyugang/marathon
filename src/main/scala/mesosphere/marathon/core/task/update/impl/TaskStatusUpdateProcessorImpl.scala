@@ -2,7 +2,6 @@ package mesosphere.marathon
 package core.task.update.impl
 
 import java.time.Clock
-import javax.inject.Inject
 
 import akka.event.EventStream
 import com.google.inject.name.Names
@@ -23,7 +22,7 @@ import scala.concurrent.Future
 /**
   * Executes the given TaskStatusUpdateSteps for every update.
   */
-class TaskStatusUpdateProcessorImpl @Inject() (
+class TaskStatusUpdateProcessorImpl(
     clock: Clock,
     instanceTracker: InstanceTracker,
     stateOpProcessor: TaskStateOpProcessor,

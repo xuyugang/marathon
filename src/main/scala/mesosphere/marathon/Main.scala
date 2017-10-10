@@ -110,8 +110,13 @@ class MarathonApp(args: Seq[String]) extends AutoCloseable with StrictLogging {
       log.error(s"Failed to load libmesos: ${LibMesos.version}")
       System.exit(1)
     }
-
-    val injector = Guice.createInjector(modules.asJava)
+    val injector = try {
+      Guice.createInjector(modules.asJava)
+    } catch {
+      case ex: Throwable =>
+        logger.error("Error while resolving Guice dependency graph", ex)
+        throw ex
+    }
     Metrics.start(injector.getInstance(classOf[ActorSystem]))
     val services = Seq(
       injector.getInstance(classOf[MarathonHttpService]),
@@ -137,6 +142,8 @@ class MarathonApp(args: Seq[String]) extends AutoCloseable with StrictLogging {
     }
 
     log.info("All services up and running.")
+    injector.getInstance(classOf[MarathonInitializer]).readyToInitialize()
+
   }
 
   def shutdown(): Unit = if (running) {

@@ -7,7 +7,6 @@ import akka.stream.scaladsl.Source
 import java.util.concurrent.ExecutorService
 import mesosphere.marathon.core.base.CrashStrategy
 import mesosphere.marathon.util.LifeCycledCloseable
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 class ElectionModule(
@@ -16,7 +15,8 @@ class ElectionModule(
     eventStream: EventStream,
     hostPort: String,
     crashStrategy: CrashStrategy,
-    electionExecutor: ExecutorService
+    electionExecutor: ExecutorService,
+    marathonInitializer: MarathonInitializer
 ) {
 
   lazy private val electionBackend: Source[LeadershipState, Cancellable] = if (config.highlyAvailable()) {
@@ -37,6 +37,6 @@ class ElectionModule(
     PsuedoElectionStream()
   }
 
-  lazy val service: ElectionService = new ElectionServiceImpl(eventStream, hostPort, electionBackend,
-    crashStrategy, ExecutionContext.fromExecutor(electionExecutor))(system)
+  lazy val service: ElectionService = new ElectionServiceImpl(hostPort, electionBackend, crashStrategy,
+    marathonInitializer)(system)
 }

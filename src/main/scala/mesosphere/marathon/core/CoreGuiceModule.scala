@@ -8,7 +8,6 @@ import javax.inject.Named
 import akka.actor.{ ActorRef, Props }
 import akka.stream.Materializer
 import com.google.inject._
-import com.google.inject.name.Names
 import com.typesafe.config.Config
 import mesosphere.marathon.core.appinfo.{ AppInfoModule, AppInfoService, GroupInfoService, PodStatusService }
 import mesosphere.marathon.core.async.ExecutionContexts
@@ -29,12 +28,11 @@ import mesosphere.marathon.core.task.termination.KillService
 import mesosphere.marathon.core.task.tracker.{ InstanceCreationHandler, InstanceTracker, TaskStateOpProcessor }
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
 import mesosphere.marathon.core.task.update.impl.steps._
-import mesosphere.marathon.core.task.update.impl.{ TaskStatusUpdateProcessorImpl, ThrottlingTaskStatusUpdateProcessor }
 import mesosphere.marathon.plugin.auth.{ Authenticator, Authorizer }
 import mesosphere.marathon.plugin.http.HttpRequestHandler
 import mesosphere.marathon.storage.migration.Migration
 import mesosphere.marathon.storage.repository._
-import mesosphere.marathon.util.WorkQueue
+import mesosphere.util.state.{ ConstMesosLeaderInfo, MesosLeaderInfo, MutableMesosLeaderInfo }
 import org.eclipse.jetty.servlets.EventSourceServlet
 
 import scala.collection.immutable
@@ -191,22 +189,9 @@ class CoreGuiceModule(config: Config) extends AbstractModule {
 
   override def configure(): Unit = {
     bind(classOf[Clock]).toInstance(Clock.systemUTC())
-    bind(classOf[CoreModule]).to(classOf[CoreModuleImpl]).in(Scopes.SINGLETON)
-
-    // FIXME: Because of cycle breaking in guice, it is hard to not wire it with Guice directly
-    bind(classOf[TaskStatusUpdateProcessor])
-      .annotatedWith(Names.named(ThrottlingTaskStatusUpdateProcessor.dependencyTag))
-      .to(classOf[TaskStatusUpdateProcessorImpl]).asEagerSingleton()
-
-    bind(classOf[TaskStatusUpdateProcessor]).to(classOf[ThrottlingTaskStatusUpdateProcessor]).asEagerSingleton()
+    bind(classOf[CoreModule]).to(classOf[CoreModuleImpl]).asEagerSingleton()
 
     bind(classOf[AppInfoModule]).asEagerSingleton()
-  }
-
-  @Provides @Singleton @Named(ThrottlingTaskStatusUpdateProcessor.dependencyTag)
-  def throttlingTaskStatusUpdateProcessorSerializer(config: MarathonConf): WorkQueue = {
-    WorkQueue("TaskStatusUpdates", maxConcurrent = config.internalMaxParallelStatusUpdates(),
-      maxQueueLength = config.internalMaxQueuedStatusUpdates())
   }
 
   @Provides
@@ -239,4 +224,23 @@ class CoreGuiceModule(config: Config) extends AbstractModule {
   @Provides
   @Singleton
   def schedulerActions(coreModule: CoreModule): SchedulerActions = coreModule.schedulerActions
+
+  @Provides @Singleton @Named(ModuleNames.MESOS_HEARTBEAT_ACTOR)
+  def mesosHeartBeatActor(coreModule: CoreModule): ActorRef = coreModule.mesosHeartbeatActor
+
+  @Provides @Singleton
+  def mesosLeaderInfo(marathonConf: MarathonConf): MesosLeaderInfo =
+    marathonConf.mesosLeaderUiUrl.get match {
+      case someUrl @ Some(_) => ConstMesosLeaderInfo(someUrl)
+      case None => new MutableMesosLeaderInfo
+    }
+
+  @Provides @Singleton def marathonInitializer(coreModule: CoreModule): MarathonInitializer =
+    coreModule.marathonInitializer
+
+  @Provides @Singleton def marathonScheduler(coreModule: CoreModule): MarathonScheduler =
+    coreModule.marathonScheduler
+
+  @Provides @Singleton def taskStatusUpdateProcessor(coreModule: CoreModule): TaskStatusUpdateProcessor =
+    coreModule.taskStatusUpdateProcessor
 }

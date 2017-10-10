@@ -1,8 +1,6 @@
 package mesosphere.marathon
 package core.task.update.impl
 
-import javax.inject.{ Inject, Named }
-
 import mesosphere.marathon.core.async.ExecutionContexts
 import mesosphere.marathon.core.task.update.TaskStatusUpdateProcessor
 import mesosphere.marathon.util.WorkQueue
@@ -18,9 +16,9 @@ object ThrottlingTaskStatusUpdateProcessor {
   final val dependencyTag = "ThrottlingTaskStatusUpdateProcessor"
 }
 
-private[core] class ThrottlingTaskStatusUpdateProcessor @Inject() (
-  @Named(ThrottlingTaskStatusUpdateProcessor.dependencyTag) serializePublish: WorkQueue,
-  @Named(ThrottlingTaskStatusUpdateProcessor.dependencyTag) wrapped: TaskStatusUpdateProcessor)
+class ThrottlingTaskStatusUpdateProcessor(
+  serializePublish: WorkQueue,
+  wrapped: TaskStatusUpdateProcessor)
     extends TaskStatusUpdateProcessor {
   override def publish(status: TaskStatus): Future[Unit] = {
     serializePublish(wrapped.publish(status))(ExecutionContexts.global)

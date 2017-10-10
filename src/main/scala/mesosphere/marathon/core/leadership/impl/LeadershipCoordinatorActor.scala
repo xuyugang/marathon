@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.leadership.PreparationMessages
 import mesosphere.marathon.core.leadership.impl.WhenLeaderActor.Stop
 
-private[leadership] object LeadershipCoordinatorActor {
+object LeadershipCoordinatorActor {
   def props(whenLeaderActors: Set[ActorRef]): Props = {
     Props(new LeadershipCoordinatorActor(whenLeaderActors))
   }

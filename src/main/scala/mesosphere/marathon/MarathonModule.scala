@@ -1,33 +1,36 @@
 package mesosphere.marathon
 
-import java.util.concurrent.TimeUnit
+import akka.stream.scaladsl.Source
+import java.util.concurrent.{ ExecutorService, Executors, TimeUnit }
 import javax.inject.Named
 
 import akka.actor.SupervisorStrategy.Restart
 import akka.actor._
 import akka.event.EventStream
 import akka.routing.RoundRobinPool
-import akka.stream.Materializer
 import com.google.inject._
 import com.google.inject.name.Names
 import mesosphere.chaos.http.HttpConf
 import mesosphere.marathon.core.deployment.DeploymentManager
-import mesosphere.marathon.core.election.ElectionService
+import mesosphere.marathon.core.election.{ CuratorElectionStream, ElectionService, ElectionServiceImpl, LeadershipState }
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.heartbeat._
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.task.termination.KillService
 import mesosphere.marathon.storage.repository.{ DeploymentRepository, GroupRepository }
+import mesosphere.marathon.util.LifeCycledCloseable
 import mesosphere.util.state._
 import org.apache.mesos.Scheduler
 import org.slf4j.LoggerFactory
+import scala.concurrent.ExecutionContext
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import scala.util.control.NonFatal
 
 object ModuleNames {
   final val HOST_PORT = "HOST_PORT"
 
+  final val ELECTION_BACKEND = "ELECTION_BACKEND"
   final val SERVER_SET_PATH = "SERVER_SET_PATH"
   final val HISTORY_ACTOR_PROPS = "HISTORY_ACTOR_PROPS"
 
@@ -46,40 +49,15 @@ class MarathonModule(conf: MarathonConf, http: HttpConf, actorSystem: ActorSyste
     bind(classOf[LeaderProxyConf]).toInstance(conf)
     bind(classOf[ZookeeperConf]).toInstance(conf)
 
-    // MesosHeartbeatMonitor decorates MarathonScheduler
-    bind(classOf[MarathonScheduler]).in(Scopes.SINGLETON)
     bind(classOf[HomeRegionProvider]).to(classOf[MarathonScheduler]).in(Scopes.SINGLETON)
-    bind(classOf[Scheduler]).annotatedWith(Names.named(MesosHeartbeatMonitor.BASE)).toProvider(getProvider(classOf[MarathonScheduler]))
-    bind(classOf[Scheduler]).to(classOf[MesosHeartbeatMonitor]).in(Scopes.SINGLETON)
 
     bind(classOf[MarathonSchedulerDriverHolder]).in(Scopes.SINGLETON)
-    bind(classOf[SchedulerDriverFactory]).to(classOf[MesosSchedulerDriverFactory]).in(Scopes.SINGLETON)
     bind(classOf[MarathonSchedulerService]).in(Scopes.SINGLETON)
     bind(classOf[DeploymentService]).to(classOf[MarathonSchedulerService])
 
     bind(classOf[String])
       .annotatedWith(Names.named(ModuleNames.SERVER_SET_PATH))
       .toInstance(conf.zooKeeperServerSetPath)
-  }
-
-  @Named(ModuleNames.MESOS_HEARTBEAT_ACTOR)
-  @Provides
-  @Singleton
-  def provideMesosHeartbeatActor(system: ActorSystem): ActorRef = {
-    system.actorOf(Heartbeat.props(Heartbeat.Config(
-      FiniteDuration(conf.mesosHeartbeatInterval.get.getOrElse(
-        MesosHeartbeatMonitor.DEFAULT_HEARTBEAT_INTERVAL_MS), TimeUnit.MILLISECONDS),
-      conf.mesosHeartbeatFailureThreshold.get.getOrElse(MesosHeartbeatMonitor.DEFAULT_HEARTBEAT_FAILURE_THRESHOLD)
-    )), ModuleNames.MESOS_HEARTBEAT_ACTOR)
-  }
-
-  @Provides
-  @Singleton
-  def provideMesosLeaderInfo(): MesosLeaderInfo = {
-    conf.mesosLeaderUiUrl.get match {
-      case someUrl @ Some(_) => ConstMesosLeaderInfo(someUrl)
-      case None => new MutableMesosLeaderInfo
-    }
   }
 
   @Named("schedulerActor")
@@ -99,7 +77,7 @@ class MarathonModule(conf: MarathonConf, http: HttpConf, actorSystem: ActorSyste
     eventBus: EventStream,
     schedulerActions: SchedulerActions,
     deploymentManager: DeploymentManager,
-    @Named(ModuleNames.HISTORY_ACTOR_PROPS) historyActorProps: Props)(implicit mat: Materializer): ActorRef = {
+    @Named(ModuleNames.HISTORY_ACTOR_PROPS) historyActorProps: Props): ActorRef = {
     val supervision = OneForOneStrategy() {
       case NonFatal(_) => Restart
     }
@@ -115,9 +93,9 @@ class MarathonModule(conf: MarathonConf, http: HttpConf, actorSystem: ActorSyste
         killService,
         launchQueue,
         driverHolder,
-        electionService,
+        electionService.leaderTransitionEvents,
         eventBus
-      )(mat).withRouter(RoundRobinPool(nrOfInstances = 1, supervisorStrategy = supervision)),
+      ).withRouter(RoundRobinPool(nrOfInstances = 1, supervisorStrategy = supervision)),
       "MarathonScheduler")
   }
 

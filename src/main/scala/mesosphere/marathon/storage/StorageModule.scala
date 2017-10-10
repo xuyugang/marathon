@@ -12,7 +12,6 @@ import mesosphere.marathon.storage.repository._
 
 import scala.collection.immutable.Seq
 import scala.concurrent.ExecutionContext
-//import scala.language.existentials
 
 /**
   * Provides the repositories for all persistable entities.

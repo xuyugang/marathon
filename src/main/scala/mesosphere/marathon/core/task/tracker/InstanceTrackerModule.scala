@@ -22,8 +22,9 @@ class InstanceTrackerModule(
     updateSteps: Seq[InstanceChangeHandler])(implicit mat: Materializer) {
   lazy val instanceTracker: InstanceTracker =
     new InstanceTrackerDelegate(config, instanceTrackerActorRef)
-  lazy val instanceTrackerUpdateStepProcessor: InstanceTrackerUpdateStepProcessor =
+  lazy val instanceTrackerUpdateStepProcessor: InstanceTrackerUpdateStepProcessor = {
     new InstanceTrackerUpdateStepProcessorImpl(updateSteps)
+  }
 
   def instanceCreationHandler: InstanceCreationHandler = instanceStateOpProcessor
   def stateOpProcessor: TaskStateOpProcessor = instanceStateOpProcessor
