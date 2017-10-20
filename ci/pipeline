@@ -185,3 +185,78 @@ def jenkins(): Unit = {
     run()
   }
 }
+
+@main
+def tagAndRelease(tagName: String): Unit = {
+  val pkgserverUser = sys.env.getOrElse("PKG_SSH_USER", {
+    throw new IllegalStateException("PKG_SSH_USER environment variable should be set")
+  })
+  val pkgserverKey = Path(sys.env.getOrElse("PKG_SSH_KEY_PATH", {
+    throw new IllegalStateException("PKG_SSH_KEY_PATH environment variable should be set")
+  }))
+  val pkgserverHost = sys.env.getOrElse("PKG_SSH_HOST", {
+    throw new IllegalStateException("PKG_SSH_HOST environment variable should be set")
+  })
+
+  utils.priorPatchVersion(tagName).foreach { prior =>
+    val revs = %%("git", "rev-list", "--format=oneline", s"HEAD..${prior}").out.string
+    if(revs.trim.nonEmpty) {
+      println(s"Error! ${prior} is not a direct ancestor of HEAD!")
+      sys.exit(1)
+    }
+  }
+  // TODO - if tag already specified, and is HEAD, do nothing
+  println(s"Tagging ${tagName}")
+  %("git", "tag", tagName, "HEAD")
+
+  utils.printStageTitle(s"Building packages for ${tagName}")
+  createDockerAndLinux()
+
+  utils.printStageTitle(s"Building package test bed Docker images")
+  %("make", "all")(implicitly[Path] / 'tests / 'package)
+
+  utils.printStageTitle(s"Running package tests")
+  %("./test.sc", "all")(implicitly[Path] / 'tests / 'package)
+
+  utils.printStageTitle(s"Pushing git tag")
+  %("git", "push", "origin", tagName)
+
+  utils.printStageTitle(s"Pushing docker iamge")
+  // Note - we don't promote latest here
+  %("docker", "push", s"mesosphere/marathon:${tagName}")
+
+  utils.printStageTitle(s"Uploading native packages")
+  %("rsync", "-avz", "-e", s"ssh -i ${pkgserverKey}",
+    (pwd / 'target / 'packages) + "/",
+    s"${pkgserverUser}@${pkgserverHost}:repo/incoming/marathon-${tagName}/")
+
+  val pkgType = if (tagName.toLowerCase contains "rc")
+    "-testing"
+  else
+    ""
+
+  val mappings = Seq(
+    "systemd" -> s"debian/jessie${pkgType}",
+    "systemd" -> s"ubuntu/yakkety${pkgType}",
+    "systemd" -> s"ubuntu/xenial${pkgType}",
+    "systemd" -> s"ubuntu/wily${pkgType}",
+    "systemd" -> s"ubuntu/vivid${pkgType}",
+    "upstart" -> s"ubuntu/trusty${pkgType}",
+    "upstart" -> s"ubuntu/precise${pkgType}",
+    "systemv" -> s"el${pkgType}/6",
+    "systemd" -> s"el${pkgType}/7")
+
+  val copyCommands = mappings.map { case (packageType, path) =>
+      s"cp $$HOME/repo/incoming/marathon-${tagName}/${packageType}-marathon* " +
+      s"$$HOME/repo/incoming/${path}/"
+  }.mkString(";")
+
+  utils.printStageTitle("Distributing packages to distros")
+  %("ssh", "-i", pkgserverKey, s"${pkgserverUser}@${pkgserverHost}", "bash",
+    "-e", "-x", "-c",
+    utils.escapeCmdArg(List(
+      copyCommands,
+      s"rm -rf $$HOME/repo/incoming/marathon-${tagName}").mkString("\n")))
+
+  utils.printStageTitle("All done")
+}
