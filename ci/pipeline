@@ -213,10 +213,10 @@ def tagAndRelease(tagName: String): Unit = {
   createDockerAndLinux()
 
   utils.printStageTitle(s"Building package test bed Docker images")
-  %("make", "all")(implicitly[Path] / 'tests / 'package)
+  %("make", "all")(pwd / 'tests / 'package)
 
   utils.printStageTitle(s"Running package tests")
-  %("./test.sc", "all")(implicitly[Path] / 'tests / 'package)
+  %("./test.sc", "all")(pwd / 'tests / 'package)
 
   utils.printStageTitle(s"Pushing git tag")
   %("git", "push", "origin", tagName)
