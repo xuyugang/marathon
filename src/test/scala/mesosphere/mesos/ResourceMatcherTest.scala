@@ -180,7 +180,7 @@ class ResourceMatcherTest extends UnitTest with Inside {
       )
       res.scalarMatch(Resource.DISK).get.consumed.toSet should be(
         Set(
-          DiskResourceMatch.Consumption(2.0, ResourceRole.Unreserved, Some(diskReservation), DiskSource.root, None)
+          DiskResourceMatch.Consumption(2.0, ResourceRole.Unreserved, Some(diskReservation), DiskSource.root, None, None)
         )
       )
 
@@ -240,7 +240,7 @@ class ResourceMatcherTest extends UnitTest with Inside {
       res.scalarMatch(Resource.DISK).get.consumed.toSet should be(
         Set(
           DiskResourceMatch.Consumption(
-            2.0, ResourceRole.Unreserved, reservation = Some(diskReservation), DiskSource.root, None)
+            2.0, ResourceRole.Unreserved, reservation = Some(diskReservation), DiskSource.root, None, None)
         )
       )
 
@@ -667,12 +667,13 @@ class ResourceMatcherTest extends UnitTest with Inside {
             disk = Some(MarathonTestHelper.pathDisk("/path2")))).
           build()
 
-      val volume = PersistentVolume(
-        containerPath = "/var/lib/data",
-        mode = Mesos.Volume.Mode.RW,
+      val persistentVolume = PersistentVolume(
+        name = Some("0"),
         persistent = PersistentVolumeInfo(
           size = 1500,
           `type` = DiskType.Path))
+      val mount = VolumeMount(Some("0"), "/var/lib/data")
+      val volume = VolumeWithMount(persistentVolume, mount)
 
       val app = AppDefinition(
         id = "/test".toRootPath,
@@ -697,8 +698,10 @@ class ResourceMatcherTest extends UnitTest with Inside {
 
       resourceMatchResponse shouldBe a[ResourceMatchResponse.Match]
       resourceMatchResponse.asInstanceOf[ResourceMatchResponse.Match].resourceMatch.scalarMatch("disk").get.consumed.toSet shouldBe Set(
-        DiskResourceMatch.Consumption(1024.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume)),
-        DiskResourceMatch.Consumption(476.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume)))
+        DiskResourceMatch.Consumption(1024.0, "*", None, DiskSource(DiskType.Path, Some("/path2")),
+          Some(persistentVolume), Some(mount)),
+        DiskResourceMatch.Consumption(476.0, "*", None, DiskSource(DiskType.Path, Some("/path2")),
+          Some(persistentVolume), Some(mount)))
     }
 
     "match disk enforces constraints" in {
@@ -709,13 +712,14 @@ class ResourceMatcherTest extends UnitTest with Inside {
           build()
       }.toMap
 
-      val volume = PersistentVolume(
-        containerPath = "/var/lib/data",
-        mode = Mesos.Volume.Mode.RW,
-        persistent = PersistentVolumeInfo(
-          size = 500,
-          `type` = DiskType.Path,
-          constraints = Set(MarathonTestHelper.constraint("path", "LIKE", Some(".+disk-b")))))
+      val volume = VolumeWithMount(
+        volume = PersistentVolume(
+          name = None,
+          persistent = PersistentVolumeInfo(
+            size = 500,
+            `type` = DiskType.Path,
+            constraints = Set(MarathonTestHelper.constraint("path", "LIKE", Some(".+disk-b"))))),
+        mount = VolumeMount(None, "/var/lib/data"))
 
       val app = AppDefinition(
         id = "/test".toRootPath,
@@ -748,13 +752,14 @@ class ResourceMatcherTest extends UnitTest with Inside {
             build()
 
       def mountRequest(size: Long, maxSize: Option[Long]) = {
-        val volume = PersistentVolume(
-          containerPath = "/var/lib/data",
-          mode = Mesos.Volume.Mode.RW,
-          persistent = PersistentVolumeInfo(
-            size = size,
-            maxSize = maxSize,
-            `type` = DiskType.Mount))
+        val volume = VolumeWithMount(
+          volume = PersistentVolume(
+            name = None,
+            persistent = PersistentVolumeInfo(
+              size = size,
+              maxSize = maxSize,
+              `type` = DiskType.Mount)),
+          mount = VolumeMount(None, "/var/lib/data"))
 
         val app = AppDefinition(
           id = "/test".toRootPath,
@@ -797,11 +802,12 @@ class ResourceMatcherTest extends UnitTest with Inside {
         setHostname(AgentTestDefaults.defaultHostName).
         build()
 
-      val volume = PersistentVolume(
-        containerPath = "/var/data",
-        mode = Mesos.Volume.Mode.RW,
+      val persistentVolume = PersistentVolume(
+        name = None,
         persistent = PersistentVolumeInfo(
           size = 500, `type` = DiskType.Root))
+      val mount = VolumeMount(None, "/var/data")
+      val volume = VolumeWithMount(persistentVolume, mount)
 
       val app = AppDefinition(
         id = "/test-persistent-volumes-with-unique-constraint".toRootPath,
@@ -814,7 +820,7 @@ class ResourceMatcherTest extends UnitTest with Inside {
 
       // Since offer matcher checks the instance version it's should be >= app.version
       val instance = TestInstanceBuilder.newBuilder(app.id, version = app.version).addTaskReserved(
-        Task.LocalVolumeId(app.id, volume))
+        Task.LocalVolumeId(app.id, persistentVolume, mount))
         .getInstance()
 
       val response = ResourceMatcher.matchResources(
@@ -829,11 +835,11 @@ class ResourceMatcherTest extends UnitTest with Inside {
         setHostname(AgentTestDefaults.defaultHostName).
         build()
 
-      val volume = PersistentVolume(
-        containerPath = "/var/data",
-        mode = Mesos.Volume.Mode.RW,
-        persistent = PersistentVolumeInfo(
-          size = 500, `type` = DiskType.Root))
+      val persistentVolume = PersistentVolume(
+        name = None,
+        persistent = PersistentVolumeInfo(size = 500, `type` = DiskType.Root))
+      val mount = VolumeMount(None, "/var/data")
+      val volume = VolumeWithMount(persistentVolume, mount)
 
       val app = AppDefinition(
         id = "/test-persistent-volumes-without-unique-constraint".toRootPath,
@@ -844,7 +850,7 @@ class ResourceMatcherTest extends UnitTest with Inside {
 
       // Since offer matcher checks the instance version it's should be >= app.version
       val instance = TestInstanceBuilder.newBuilder(app.id, version = app.version).addTaskReserved(
-        Task.LocalVolumeId(app.id, volume))
+        Task.LocalVolumeId(app.id, persistentVolume, mount))
         .getInstance()
 
       val response = ResourceMatcher.matchResources(

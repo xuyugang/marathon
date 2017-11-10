@@ -8,6 +8,7 @@ import mesosphere.marathon.integration.facades.MarathonFacade._
 import mesosphere.marathon.integration.setup.{ EmbeddedMarathonTest, MesosConfig, WaitTestSupport }
 import mesosphere.marathon.raml.{ App, Container, DockerContainer, EngineType }
 import mesosphere.marathon.state.PathId._
+import mesosphere.marathon.state.{ HostVolume, VolumeMount }
 import mesosphere.{ AkkaIntegrationTest, WhenEnvSet }
 
 import scala.collection.immutable.Seq
@@ -130,7 +131,7 @@ class MesosAppIntegrationTest extends AkkaIntegrationTest with EmbeddedMarathonT
             image = Some(raml.Image(raml.ImageType.Docker, "python:3.4.6-alpine")),
             healthCheck = Some(MesosHttpHealthCheck(portIndex = Some(PortReference("task1")), path = Some("/"))),
             volumeMounts = Seq(
-              VolumeMount("python", s"$containerDir/python", Some(true))
+              VolumeMount(Some("python"), s"$containerDir/python", true)
             )
           ),
           MesosContainer(
@@ -141,12 +142,12 @@ class MesosAppIntegrationTest extends AkkaIntegrationTest with EmbeddedMarathonT
             image = Some(raml.Image(raml.ImageType.Docker, "python:3.4.6-alpine")),
             healthCheck = Some(MesosHttpHealthCheck(portIndex = Some(PortReference("task2")), path = Some("/"))),
             volumeMounts = Seq(
-              VolumeMount("python", s"$containerDir/python", Some(true))
+              VolumeMount(Some("python"), s"$containerDir/python", true)
             )
           )
         ),
-        podVolumes = Seq(
-          HostVolume("python", s"$projectDir/src/test/python")
+        volumes = Seq(
+          HostVolume(Some("python"), s"$projectDir/src/test/python")
         ),
         networks = Seq(HostNetwork),
         instances = 1

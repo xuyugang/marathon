@@ -167,12 +167,12 @@ trait AppValidation {
 
   def validVolume(container: Container, enabledFeatures: Set[String], secrets: Map[String, SecretDef]): Validator[AppVolume] = new Validator[AppVolume] {
     import state.PathPatterns._
-    val validHostVolume = validator[AppDockerVolume] { v =>
+    val validHostVolume = validator[AppHostVolume] { v =>
       v.containerPath is notEmpty
       v.hostPath is notEmpty
     }
     val validPersistentVolume = {
-      val notHaveConstraintsOnRoot = isTrue[PersistentVolume](
+      val notHaveConstraintsOnRoot = isTrue[PersistentVolumeInfo](
         "Constraints on root volumes are not supported") { info =>
           if (info.`type`.forall(_ == PersistentVolumeType.Root)) // default is Root, see AppConversion
             info.constraints.isEmpty
@@ -180,11 +180,11 @@ trait AppValidation {
             true
         }
 
-      val meetMaxSizeConstraint = isTrue[PersistentVolume]("Only mount volumes can have maxSize") { info =>
+      val meetMaxSizeConstraint = isTrue[PersistentVolumeInfo]("Only mount volumes can have maxSize") { info =>
         info.`type`.contains(PersistentVolumeType.Mount) || info.maxSize.isEmpty
       }
 
-      val haveProperlyOrderedMaxSize = isTrue[PersistentVolume]("Max size must be larger than size") { info =>
+      val haveProperlyOrderedMaxSize = isTrue[PersistentVolumeInfo]("Max size must be larger than size") { info =>
         info.maxSize.forall(_ > info.size)
       }
 
@@ -213,7 +213,7 @@ trait AppValidation {
         }
       }
 
-      val validPersistentInfo = validator[PersistentVolume] { info =>
+      val validPersistentInfo = validator[PersistentVolumeInfo] { info =>
         info.size should be > 0L
         info.constraints.each must complyWithVolumeConstraintRules
       } and meetMaxSizeConstraint and notHaveConstraintsOnRoot and haveProperlyOrderedMaxSize
@@ -230,7 +230,7 @@ trait AppValidation {
       val validOptions = validator[Map[String, String]] { option =>
         option.keys.each should matchRegex(OptionKeyRegex)
       }
-      val validExternalInfo: Validator[ExternalVolume] = validator[ExternalVolume] { info =>
+      val validExternalInfo: Validator[ExternalVolumeInfo] = validator[ExternalVolumeInfo] { info =>
         info.name is definedAnd(matchRegex(LabelRegex))
         info.provider is definedAnd(matchRegex(LabelRegex))
         info.options is validOptions
@@ -251,7 +251,7 @@ trait AppValidation {
     }
     override def apply(v: AppVolume): Result = {
       v match {
-        case v: AppDockerVolume => validate(v)(validHostVolume)
+        case v: AppHostVolume => validate(v)(validHostVolume)
         case v: AppPersistentVolume => validate(v)(validPersistentVolume)
         case v: AppExternalVolume => validate(v)(validExternalVolume)
         case v: AppSecretVolume => validate(v)(validSecretVolume) // Validate that the secret reference is valid
