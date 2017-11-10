@@ -164,15 +164,19 @@ class CuratorElectionStreamTest extends AkkaUnitTest with Inside with ZookeeperS
      * Or, both could see spot the illegal state, and both could crash.
      */
     val futures = Stream.continually {
+      logger.info(s"Starting a stream")
       CuratorElectionStream(f.client, f.leaderPath, 15000.millis, "duplicate-host", f.electionEC)
         .runWith(Sink.last)
     }.take(2)
+    logger.info(s"Two streams offered leadership. Waiting for failure")
 
     val failure = Future.firstCompletedOf(futures.map(_.failed)).futureValue
+    logger.info(s"Failure obtained. ${failure}")
 
     inside(failure) {
       case ex: IllegalStateException =>
         ex.getMessage shouldBe "Multiple election participants have the same ID: duplicate-host. This is not allowed."
     }
+    logger.info("We're done with our test lol")
   }
 }
